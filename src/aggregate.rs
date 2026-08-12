@@ -46,7 +46,11 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         )
     };
 
-    let existing = repo.read_text(github_path).unwrap_or_default();
+    let existing = match repo.read_text(github_path) {
+        Ok(text) => text,
+        Err(CorgiError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
+    };
     let sections = repo.split_github_sections(&existing)?;
     let mut content = sections.prefix;
     if !content.is_empty() && !content.ends_with("\n\n") {

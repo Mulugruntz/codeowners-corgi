@@ -239,7 +239,12 @@ pub fn select_auto_rule<'a>(
 }
 
 pub fn is_exact_path(path: &str) -> bool {
-    !path.ends_with('/')
+    // CODEOWNERS semantics: an entry is only anchored to a single file when it
+    // starts with `/` (repo/manifest-root anchored), has no wildcards, and does
+    // not describe a directory. Unanchored entries like `src/lib.rs` are still
+    // patterns that can match at any depth.
+    path.starts_with('/')
+        && !path.ends_with('/')
         && !path
             .chars()
             .any(|character| matches!(character, '*' | '?' | '[' | ']'))
@@ -334,9 +339,11 @@ fn is_comment_or_blank(line: &str) -> bool {
     trimmed.is_empty() || trimmed.starts_with('#')
 }
 
-fn item_sort_key(item: &Item) -> (String, u8, String) {
+fn item_sort_key(item: &Item) -> String {
+    // Sort rules and entries together using their pattern/path so that
+    // `Rule[auto-assign]` items land near the files they affect.
     match item {
-        Item::Rule(rule) => ("".to_string(), 0, rule.pattern.clone()),
-        Item::Entry(entry) => ("~".to_string(), 1, entry.path.clone()),
+        Item::Rule(rule) => rule.pattern.clone(),
+        Item::Entry(entry) => entry.path.clone(),
     }
 }

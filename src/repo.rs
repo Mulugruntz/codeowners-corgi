@@ -130,18 +130,17 @@ impl RepoContext {
                 suffix: String::new(),
             });
         };
-        let Some(end_idx) = text.find(GENERATED_END) else {
+        // Search for the end marker only after the begin marker so that a
+        // matching literal in the local section (for example inside a
+        // comment) can't be mistaken for the real end.
+        let search_from = begin_idx + GENERATED_BEGIN.len();
+        let Some(end_offset) = text[search_from..].find(GENERATED_END) else {
             return Err(CorgiError::Message(format!(
                 "{} is missing '{}'",
                 GITHUB_CODEOWNERS, GENERATED_END
             )));
         };
-        if end_idx < begin_idx {
-            return Err(CorgiError::Message(format!(
-                "{} has malformed generated section markers",
-                GITHUB_CODEOWNERS
-            )));
-        }
+        let end_idx = search_from + end_offset;
 
         let prefix = text[..begin_idx].to_string();
         let end_line_end = text[end_idx..]

@@ -103,18 +103,18 @@ fn sync_respects_nested_roots_gitignore_and_auto_assign_rules() {
     assert_eq!(
         read(repo.path(), "CODEOWNERS"),
         indoc! {"
-            # Rule[auto-assign]: /src/** @org/root
             /.gitignore
             /CODEOWNERS
             /README.md
+            # Rule[auto-assign]: /src/** @org/root
             /src/lib.rs @org/root
         "}
     );
     assert_eq!(
         read(repo.path(), "packages/api/CODEOWNERS"),
         indoc! {"
-            # Rule[auto-assign]: /src/** @org/api
             /CODEOWNERS
+            # Rule[auto-assign]: /src/** @org/api
             /src/main.rs @org/api
         "}
     );
@@ -169,11 +169,11 @@ fn sync_uses_most_specific_auto_assign_rule_without_overwriting_existing_owner()
     assert_eq!(
         read(repo.path(), "CODEOWNERS"),
         indoc! {"
-            # Rule[auto-assign]: /src/** @org/root
-            # Rule[auto-assign]: /src/special/** @org/special
             /CODEOWNERS
+            # Rule[auto-assign]: /src/** @org/root
             /src/existing.rs @org/manual
             /src/new.rs @org/root
+            # Rule[auto-assign]: /src/special/** @org/special
             /src/special/feature.rs @org/special
         "}
     );
@@ -199,9 +199,9 @@ fn migrate_converts_patterns_with_last_match_wins_and_is_idempotent() {
 
     let expected = indoc! {"
         # Rule[auto-assign]: *.md @org/docs
-        # Rule[auto-assign]: /src/** @org/backend
         /CODEOWNERS
         /README.md @org/docs
+        # Rule[auto-assign]: /src/** @org/backend
         /src/api.rs @org/backend
         /src/lib.rs @org/backend
     "};
@@ -275,8 +275,8 @@ fn sync_updates_local_github_section_without_reaggregating() {
     assert_eq!(
         read(repo.path(), ".github/CODEOWNERS"),
         indoc! {"
-            # Rule[auto-assign]: /.github/workflows/** @org/platform
             /.github/CODEOWNERS
+            # Rule[auto-assign]: /.github/workflows/** @org/platform
             /.github/workflows/ci.yml @org/platform
 
             # BEGIN CORGI GENERATED
@@ -300,6 +300,6 @@ fn sync_handles_spaces_and_unicode_paths() {
 
     assert_eq!(
         read(repo.path(), "CODEOWNERS"),
-        "# Rule[auto-assign]: /src/** @org/team\n/CODEOWNERS\n/src/über\\ file.rs @org/team\n"
+        "/CODEOWNERS\n# Rule[auto-assign]: /src/** @org/team\n/src/über\\ file.rs @org/team\n"
     );
 }
