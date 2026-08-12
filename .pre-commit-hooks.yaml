@@ -1,0 +1,18 @@
+- id: corgi-sync
+  name: CORGI - sync CODEOWNERS manifests
+  entry: corgi sync
+  language: rust
+  pass_filenames: false
+
+- id: corgi-aggregate
+  name: CORGI - aggregate CODEOWNERS
+  entry: corgi aggregate
+  language: rust
+  pass_filenames: false
+
+- id: corgi-migrate
+  name: CORGI - migrate CODEOWNERS
+  entry: corgi migrate
+  language: rust
+  pass_filenames: false
+  stages: [manual]
