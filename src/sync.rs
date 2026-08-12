@@ -141,7 +141,7 @@ fn find_renamed_entry(
     Ok(None)
 }
 
-fn combine_github_sections(local: &str, generated: Option<&str>, suffix: &str) -> String {
+pub fn combine_github_sections(local: &str, generated: Option<&str>, suffix: &str) -> String {
     let mut content = local.to_string();
     if let Some(generated) = generated {
         if !content.is_empty() && !content.ends_with("\n\n") {

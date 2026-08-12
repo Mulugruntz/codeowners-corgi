@@ -4,7 +4,7 @@ use crate::{
     codeowners::{Entry, EntryKind, Item, Manifest, Rule, matches_pattern},
     error::Result,
     repo::{RepoContext, manifest_display_path},
-    sync::run as sync_run,
+    sync::{combine_github_sections, run as sync_run},
 };
 
 pub fn run(repo: &RepoContext) -> Result<i32> {
@@ -79,23 +79,7 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         next_manifest.sort_items();
         let rendered_local = next_manifest.render();
         let rendered = if package.is_github {
-            let mut content = rendered_local.clone();
-            if let Some(generated) = generated.as_deref() {
-                if !content.is_empty() && !content.ends_with("\n\n") {
-                    if !content.ends_with('\n') {
-                        content.push('\n');
-                    }
-                    content.push('\n');
-                }
-                content.push_str(generated);
-                if !suffix.is_empty() {
-                    if !content.ends_with('\n') {
-                        content.push('\n');
-                    }
-                    content.push_str(&suffix);
-                }
-            }
-            content
+            combine_github_sections(&rendered_local, generated.as_deref(), &suffix)
         } else {
             rendered_local
         };
