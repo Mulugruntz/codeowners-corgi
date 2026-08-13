@@ -1,5 +1,7 @@
 # Rule[auto-assign]: / @Mulugruntz
 /.github/CODEOWNERS @Mulugruntz
+/.github/workflows/rust-lint-and-format.yaml @Mulugruntz
+/.github/workflows/rust-tests.yaml @Mulugruntz
 /.gitignore @Mulugruntz
 /.pre-commit-hooks.yaml @Mulugruntz
 /Cargo.lock @Mulugruntz
