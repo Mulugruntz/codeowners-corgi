@@ -52,14 +52,31 @@ impl RepoContext {
 
     pub fn package_roots(&self) -> Result<Vec<PackageInfo>> {
         let mut packages = Vec::new();
+        let mut has_root_package = false;
         for file in self.walk_files()? {
             if file.file_name() == Some(CODEOWNERS_NAME) {
                 let root = file.parent().map(Utf8Path::to_path_buf).unwrap_or_default();
+                if root.as_str().is_empty() {
+                    has_root_package = true;
+                }
                 packages.push(PackageInfo {
                     manifest_path: file,
                     is_github: root.as_str() == ".github",
                     root,
                 });
+            }
+        }
+
+        // GitHub reads `.github/CODEOWNERS` for the whole repository. When it is
+        // the only CODEOWNERS in the repo (no root `/CODEOWNERS`), promote its
+        // package root to the repository root so `sync` covers every managed
+        // file. When both files exist, keep the .github package scoped to
+        // `.github/` and let the root package own the rest.
+        if !has_root_package {
+            for package in packages.iter_mut() {
+                if package.is_github {
+                    package.root = Utf8PathBuf::new();
+                }
             }
         }
 

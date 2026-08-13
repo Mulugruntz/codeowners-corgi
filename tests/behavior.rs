@@ -303,3 +303,74 @@ fn sync_handles_spaces_and_unicode_paths() {
         "/CODEOWNERS\n# Rule[auto-assign]: /src/** @org/team\n/src/über\\ file.rs @org/team\n"
     );
 }
+
+#[test]
+fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
+    let repo = init_repo();
+    write(
+        repo.path(),
+        ".github/CODEOWNERS",
+        indoc! {"
+            # Rule[auto-assign]: /.github/workflows/** @org/platform
+            # Rule[auto-assign]: /src/** @org/backend
+
+            # BEGIN CORGI GENERATED
+            # END CORGI GENERATED
+        "},
+    );
+    write(repo.path(), "README.md", "readme");
+    write(repo.path(), "src/lib.rs", "lib");
+    write(repo.path(), ".github/workflows/ci.yml", "name: ci\n");
+
+    run_corgi(repo.path(), "sync").code(1);
+
+    assert_eq!(
+        read(repo.path(), ".github/CODEOWNERS"),
+        indoc! {"
+            /.github/CODEOWNERS
+            # Rule[auto-assign]: /.github/workflows/** @org/platform
+            /.github/workflows/ci.yml @org/platform
+            /README.md
+            # Rule[auto-assign]: /src/** @org/backend
+            /src/lib.rs @org/backend
+
+            # BEGIN CORGI GENERATED
+            # END CORGI GENERATED
+        "}
+    );
+
+    // aggregate should not add any duplicate entries — the local section
+    // already covers every file since it is the sole package.
+    run_corgi(repo.path(), "aggregate").code(0);
+    assert_eq!(
+        read(repo.path(), ".github/CODEOWNERS"),
+        indoc! {"
+            /.github/CODEOWNERS
+            # Rule[auto-assign]: /.github/workflows/** @org/platform
+            /.github/workflows/ci.yml @org/platform
+            /README.md
+            # Rule[auto-assign]: /src/** @org/backend
+            /src/lib.rs @org/backend
+
+            # BEGIN CORGI GENERATED
+            # END CORGI GENERATED
+        "}
+    );
+
+    // sync is idempotent on a second run.
+    run_corgi(repo.path(), "sync").code(1);
+    assert_eq!(
+        read(repo.path(), ".github/CODEOWNERS"),
+        indoc! {"
+            /.github/CODEOWNERS
+            # Rule[auto-assign]: /.github/workflows/** @org/platform
+            /.github/workflows/ci.yml @org/platform
+            /README.md
+            # Rule[auto-assign]: /src/** @org/backend
+            /src/lib.rs @org/backend
+
+            # BEGIN CORGI GENERATED
+            # END CORGI GENERATED
+        "}
+    );
+}

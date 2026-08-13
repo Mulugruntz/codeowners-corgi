@@ -17,6 +17,7 @@ corgi migrate
 - Nested package roots take ownership away from ancestor package roots.
 - `# Rule[auto-assign]: ...` comments are auto-assignment rules for new files only.
 - `.github/CODEOWNERS` keeps its local `.github` ownership outside the generated section and stores the repository-wide aggregate inside the generated section.
+- When `.github/CODEOWNERS` is the only manifest (no root `/CODEOWNERS`), its local section is promoted to cover the entire repository so every file remains owned by the file GitHub actually reads.
 
 ## Workflow
 
