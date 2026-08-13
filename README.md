@@ -53,18 +53,35 @@ Use a local section plus generated section markers:
 
 `corgi sync` only reconciles the local `.github` section.
 `corgi aggregate` only rebuilds the generated section and ignores the previous generated contents as input.
+When the aggregate would be empty, `corgi aggregate` omits the generated section entirely.
 
 ## pre-commit / prek
+
+Either a `.pre-commit-config.yaml` file:
 
 ```yaml
 - repo: https://github.com/Mulugruntz/codeowners-corgi
   rev: v0.1.0
   hooks:
     - id: corgi-sync
+      language_version: system
     - id: corgi-aggregate
+      language_version: system
 ```
 
-Use only `corgi-sync` when another aggregation tool manages the repository-wide `CODEOWNERS` output.
+Or a `prek.toml` file:
+
+```toml
+[[repos]]
+repo = "https://github.com/Mulugruntz/codeowners-corgi"
+rev = "v0.1.0"
+hooks = [
+    { id = "corgi-sync", language_version = "system" },
+    { id = "corgi-aggregate", language_version = "system" },
+]
+```
+
+Use only `corgi-sync` (and omit `corgi-aggregate`) when another aggregation tool manages the repository-wide `CODEOWNERS` output.
 
 ## Development
 

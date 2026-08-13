@@ -47,12 +47,14 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
     let mut used_existing = BTreeSet::new();
     let mut changed = false;
     let mut unowned = false;
+    let mut unowned_by_manifest = BTreeMap::<String, Vec<String>>::new();
 
     for package in &packages {
         let Some(files) = managed_files.get(&package.root) else {
             continue;
         };
         let original = parsed.get(&package.root).expect("parsed manifest");
+        let manifest_name = package.display_name();
         let rules = original.rules().cloned().collect::<Vec<Rule>>();
         let rule_items = original
             .items
@@ -93,6 +95,10 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
 
             if entry.owners.is_empty() {
                 unowned = true;
+                unowned_by_manifest
+                    .entry(manifest_name.clone())
+                    .or_default()
+                    .push(display_path.clone());
             }
             new_items.push(Item::Entry(entry));
         }
@@ -120,7 +126,22 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         changed |= repo.write_if_changed(&package.manifest_path, &rendered)?;
     }
 
+    if unowned {
+        print_unowned_summary(&unowned_by_manifest);
+    }
+
     if changed || unowned { Ok(1) } else { Ok(0) }
+}
+
+fn print_unowned_summary(unowned_by_manifest: &BTreeMap<String, Vec<String>>) {
+    eprintln!("unowned files remain after sync:");
+    for (manifest, paths) in unowned_by_manifest {
+        eprintln!("  {manifest}:");
+        for path in paths {
+            eprintln!("    - {path}");
+        }
+    }
+    eprintln!("add explicit owners or matching `# Rule[auto-assign]: ...` entries");
 }
 
 fn find_renamed_entry(
@@ -151,11 +172,16 @@ pub fn combine_github_sections(local: &str, generated: Option<&str>, suffix: &st
             content.push('\n');
         }
         content.push_str(generated);
-        if !suffix.is_empty() {
-            if !content.ends_with('\n') {
-                content.push('\n');
-            }
-            content.push_str(suffix);
+    }
+    if !suffix.is_empty() {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(suffix);
+    }
+    if generated.is_none() && suffix.is_empty() {
+        while content.ends_with("\n\n") {
+            content.pop();
         }
     }
     if content.is_empty() || content.ends_with('\n') {

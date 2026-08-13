@@ -37,14 +37,12 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
     }
 
     generated_entries.sort();
-    let generated_body = if generated_entries.is_empty() {
-        format!("{GENERATED_BEGIN}\n{GENERATED_END}\n")
-    } else {
+    let generated_body = (!generated_entries.is_empty()).then(|| {
         format!(
             "{GENERATED_BEGIN}\n{}\n{GENERATED_END}\n",
             generated_entries.join("\n")
         )
-    };
+    });
 
     let existing = match repo.read_text(github_path) {
         Ok(text) => text,
@@ -52,20 +50,11 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         Err(error) => return Err(error),
     };
     let sections = repo.split_github_sections(&existing)?;
-    let mut content = sections.prefix;
-    if !content.is_empty() && !content.ends_with("\n\n") {
-        if !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push('\n');
-    }
-    content.push_str(&generated_body);
-    if !sections.suffix.is_empty() {
-        if !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push_str(&sections.suffix);
-    }
+    let content = crate::sync::combine_github_sections(
+        &sections.prefix,
+        generated_body.as_deref(),
+        &sections.suffix,
+    );
 
     let changed = repo.write_if_changed(github_path, &content)?;
     Ok(if changed { 1 } else { 0 })
