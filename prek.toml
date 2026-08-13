@@ -1,0 +1,6 @@
+[[repos]]
+repo = "local"
+hooks = [
+    { id = "corgi-sync", name = "CORGI - sync CODEOWNERS manifests", language = "system", entry = "cargo run --quiet -- sync", pass_filenames = false, always_run = true },
+    { id = "corgi-aggregate", name = "CORGI - aggregate CODEOWNERS", language = "system", entry = "cargo run --quiet -- aggregate", pass_filenames = false, always_run = true },
+]

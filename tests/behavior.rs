@@ -2,6 +2,7 @@ use std::{fs, path::Path, process::Command};
 
 use assert_cmd::prelude::*;
 use indoc::indoc;
+use predicates::prelude::*;
 use tempfile::TempDir;
 
 fn init_repo() -> TempDir {
@@ -56,7 +57,15 @@ fn sync_handles_additions_deletions_unowned_and_idempotency() {
     write(repo.path(), "keep.txt", "keep");
 
     let first = run_corgi(repo.path(), "sync");
-    first.code(1);
+    first.code(1).stderr(
+        predicate::str::contains("unowned files remain after sync:")
+            .and(predicate::str::contains("CODEOWNERS:"))
+            .and(predicate::str::contains("/CODEOWNERS"))
+            .and(predicate::str::contains("/keep.txt"))
+            .and(predicate::str::contains(
+                "add explicit owners or matching `# Rule[auto-assign]: ...` entries",
+            )),
+    );
 
     let expected = indoc! {"
         # header
@@ -340,8 +349,9 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
     );
 
     // aggregate should not add any duplicate entries — the local section
-    // already covers every file since it is the sole package.
-    run_corgi(repo.path(), "aggregate").code(0);
+    // already covers every file since it is the sole package, so the empty
+    // generated section should be removed entirely.
+    run_corgi(repo.path(), "aggregate").code(1);
     assert_eq!(
         read(repo.path(), ".github/CODEOWNERS"),
         indoc! {"
@@ -351,11 +361,10 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
             /README.md
             # Rule[auto-assign]: /src/** @org/backend
             /src/lib.rs @org/backend
-
-            # BEGIN CORGI GENERATED
-            # END CORGI GENERATED
         "}
     );
+
+    run_corgi(repo.path(), "aggregate").code(0);
 
     // sync is idempotent on a second run.
     run_corgi(repo.path(), "sync").code(1);
@@ -368,9 +377,6 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
             /README.md
             # Rule[auto-assign]: /src/** @org/backend
             /src/lib.rs @org/backend
-
-            # BEGIN CORGI GENERATED
-            # END CORGI GENERATED
         "}
     );
 }

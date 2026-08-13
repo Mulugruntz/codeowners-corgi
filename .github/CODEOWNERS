@@ -1,0 +1,19 @@
+# Rule[auto-assign]: / @Mulugruntz
+/.github/CODEOWNERS @Mulugruntz
+/.gitignore @Mulugruntz
+/.pre-commit-hooks.yaml @Mulugruntz
+/Cargo.lock @Mulugruntz
+/Cargo.toml @Mulugruntz
+/README.md @Mulugruntz
+/prek.toml @Mulugruntz
+/src/aggregate.rs @Mulugruntz
+/src/cli.rs @Mulugruntz
+/src/codeowners.rs @Mulugruntz
+/src/error.rs @Mulugruntz
+/src/git.rs @Mulugruntz
+/src/lib.rs @Mulugruntz
+/src/main.rs @Mulugruntz
+/src/migrate.rs @Mulugruntz
+/src/repo.rs @Mulugruntz
+/src/sync.rs @Mulugruntz
+/tests/behavior.rs @Mulugruntz

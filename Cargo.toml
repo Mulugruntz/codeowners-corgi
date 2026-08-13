@@ -1,16 +1,18 @@
 [package]
 name = "corgi"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
+rust-version = "1.95"
 description = "CORGI: CodeOwners Reconciler for Git Integrity"
 license = "MIT"
+authors = ["Samuel Giffard <samuel@giffard.co>"]
 repository = "https://github.com/Mulugruntz/codeowners-corgi"
 readme = "README.md"
 
 [dependencies]
 camino = "1.1"
 clap = { version = "4.5", features = ["derive"] }
-git2 = { version = "0.20", default-features = false }
+git2 = { version = "0.21.0", default-features = false }
 ignore = "0.4"
 regex = "1.11"
 tempfile = "3.20"
