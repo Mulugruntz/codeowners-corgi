@@ -25,3 +25,6 @@ jobs:
 
       - name: Lint
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run prek hooks
+        uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
