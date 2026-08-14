@@ -17,27 +17,25 @@ Do not optimize prematurely or introduce abstractions without a concrete use cas
 
 ## Repository structure
 
-### General rules
+CORGI intentionally has exactly two crates:
 
-- Start with a single crate unless there is a meaningful reason for multiple crates.
-- Create a new crate only for a genuine architectural boundary such as:
-    - independently reusable library code;
-    - substantially different dependency requirements;
-    - a proc-macro;
-    - an executable/application boundary;
-    - a component that benefits materially from separate compilation or testing.
-- Do not create crates merely to represent architectural "layers".
-- Prefer normal Rust modules for internal organization.
-
-For a workspace, prefer:
-
-    Cargo.toml
+    Cargo.toml                 # workspace + corgi-cli package
+    src/                       # corgi-cli sources
+      cli.rs
+      main.rs
+    tests/                     # CLI behavior/integration tests
     crates/
-      project-core/
-      project-cli/
-      project-server/
+      corgi-core/
+        Cargo.toml
+        src/                   # reconciliation engine
 
-Each crate owns its own `src/`, `tests/`, examples, and crate-specific documentation.
+- `corgi-cli` is the root package and produces the `corgi` binary. Keep it thin: argument parsing, command dispatch, top-level error rendering, and process exit behavior belong here.
+- `corgi-core` owns repository discovery, CODEOWNERS parsing/modeling, Git-aware reconciliation, migration, and aggregation.
+- Keep `corgi-core` independent of `clap` and other CLI concerns.
+- Do not add another crate unless there is a concrete boundary that cannot be expressed cleanly as a module.
+- Keep the CLI package at the workspace root. CORGI is published as a Rust pre-commit hook, and pre-commit installs the repository with `cargo install --bins`; a virtual workspace root would break that installation model.
+- Shared dependency versions and package metadata belong in the root workspace tables.
+- The `corgi` executable name is intentionally different from the package name `corgi-cli`.
 
 ### Libraries
 
@@ -119,11 +117,7 @@ Each crate owns its own `src/`, `tests/`, examples, and crate-specific documenta
 
 Use workspace inheritance for shared metadata, dependencies, and lints where practical.
 
-For a virtual workspace targeting Rust 2024, prefer:
-
-    [workspace]
-    resolver = "3"
-    members = ["crates/*"]
+This workspace targets Rust 2024 and uses resolver 3. Keep the root `corgi-cli` package as a workspace member rather than converting the root into a virtual manifest.
 
 Prefer shared values such as:
 

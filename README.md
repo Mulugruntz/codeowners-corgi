@@ -55,6 +55,15 @@ Use a local section plus generated section markers:
 `corgi aggregate` only rebuilds the generated section and ignores the previous generated contents as input.
 When the aggregate would be empty, `corgi aggregate` omits the generated section entirely.
 
+## Architecture
+
+The repository is a two-crate Cargo workspace:
+
+- `corgi-cli` is the root package and produces the `corgi` binary. It owns argument parsing, command dispatch, top-level error rendering, and process exit behavior.
+- `corgi-core` lives in `crates/corgi-core` and owns Git repository discovery, CODEOWNERS parsing, reconciliation, migration, and aggregation. Its internal modules are private; the crate exposes only the operations used by the CLI plus its error type.
+
+The CLI intentionally remains the root package instead of making the workspace root virtual. CORGI is distributed as a Rust pre-commit hook, and pre-commit installs Rust hook repositories with `cargo install --bins` from the repository root.
+
 ## pre-commit / prek
 
 Either a `.pre-commit-config.yaml` file:
@@ -86,7 +95,8 @@ Use only `corgi-sync` (and omit `corgi-aggregate`) when another aggregation tool
 ## Development
 
 ```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+cargo fmt --all -- --check
+cargo check --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 ```

@@ -55,7 +55,6 @@ fn sync_handles_additions_deletions_unowned_and_idempotency() {
         "},
     );
     write(repo.path(), "keep.txt", "keep");
-
     let first = run_corgi(repo.path(), "sync");
     first.code(1).stderr(
         predicate::str::contains("unowned files remain after sync:")
@@ -66,7 +65,6 @@ fn sync_handles_additions_deletions_unowned_and_idempotency() {
                 "add explicit owners or matching `# Rule[auto-assign]: ...` entries",
             )),
     );
-
     let expected = indoc! {"
         # header
         /CODEOWNERS
@@ -106,7 +104,6 @@ fn sync_respects_nested_roots_gitignore_and_auto_assign_rules() {
     );
     write(repo.path(), "packages/api/src/main.rs", "fn main() {}");
     write(repo.path(), "packages/api/ignored.txt", "ignored");
-
     run_corgi(repo.path(), "sync").code(1);
 
     assert_eq!(
@@ -146,7 +143,6 @@ fn sync_preserves_comments_on_git_renames() {
     run_git(repo.path(), ["mv", "old.txt", "new.txt"]);
 
     run_corgi(repo.path(), "sync").code(1);
-
     assert_eq!(
         read(repo.path(), "CODEOWNERS"),
         indoc! {"
@@ -172,7 +168,6 @@ fn sync_uses_most_specific_auto_assign_rule_without_overwriting_existing_owner()
     write(repo.path(), "src/existing.rs", "existing");
     write(repo.path(), "src/new.rs", "new");
     write(repo.path(), "src/special/feature.rs", "feature");
-
     run_corgi(repo.path(), "sync").code(1);
 
     assert_eq!(
@@ -205,7 +200,6 @@ fn migrate_converts_patterns_with_last_match_wins_and_is_idempotent() {
     write(repo.path(), "src/api.rs", "api");
 
     run_corgi(repo.path(), "migrate").code(1);
-
     let expected = indoc! {"
         # Rule[auto-assign]: *.md @org/docs
         /CODEOWNERS
@@ -238,7 +232,6 @@ fn aggregate_preserves_local_github_section_and_ignores_previous_generated_outpu
         indoc! {"
             # Local .github ownership/rules:
             /.github/workflows/ci.yml @org/platform
-
             # BEGIN CORGI GENERATED
             /stale.txt @org/stale
             # END CORGI GENERATED
@@ -271,7 +264,6 @@ fn sync_updates_local_github_section_without_reaggregating() {
         ".github/CODEOWNERS",
         indoc! {"
             # Rule[auto-assign]: /.github/workflows/** @org/platform
-
             # BEGIN CORGI GENERATED
             /stale.txt @org/stale
             # END CORGI GENERATED
@@ -322,7 +314,6 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
         indoc! {"
             # Rule[auto-assign]: /.github/workflows/** @org/platform
             # Rule[auto-assign]: /src/** @org/backend
-
             # BEGIN CORGI GENERATED
             # END CORGI GENERATED
         "},
@@ -332,7 +323,6 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
     write(repo.path(), ".github/workflows/ci.yml", "name: ci\n");
 
     run_corgi(repo.path(), "sync").code(1);
-
     assert_eq!(
         read(repo.path(), ".github/CODEOWNERS"),
         indoc! {"
@@ -347,7 +337,6 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
             # END CORGI GENERATED
         "}
     );
-
     // aggregate should not add any duplicate entries — the local section
     // already covers every file since it is the sole package, so the empty
     // generated section should be removed entirely.
@@ -363,7 +352,6 @@ fn sync_treats_dotgithub_codeowners_as_root_when_it_is_the_only_manifest() {
             /src/lib.rs @org/backend
         "}
     );
-
     run_corgi(repo.path(), "aggregate").code(0);
 
     // sync is idempotent on a second run.

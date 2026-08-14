@@ -1,25 +1,49 @@
-[package]
-name = "corgi"
+[workspace]
+resolver = "3"
+members = ["crates/corgi-core"]
+
+[workspace.package]
 version = "0.1.1"
 edition = "2024"
 rust-version = "1.95"
-description = "CORGI: CodeOwners Reconciler for Git Integrity"
 license = "MIT"
 authors = ["Samuel Giffard <samuel@giffard.co>"]
 repository = "https://github.com/Mulugruntz/codeowners-corgi"
-readme = "README.md"
 
-[dependencies]
+[workspace.dependencies]
+assert_cmd = "2.0"
 camino = "1.1"
 clap = { version = "4.5", features = ["derive"] }
+corgi-core = { version = "0.1.1", path = "crates/corgi-core" }
 git2 = { version = "0.21.0", default-features = false }
 ignore = "0.4"
+indoc = "2.0"
+predicates = "3.1"
 regex = "1.11"
 tempfile = "3.20"
 thiserror = "2.0"
 
+[package]
+name = "corgi-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "CORGI: CodeOwners Reconciler for Git Integrity"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[[bin]]
+name = "corgi"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+corgi-core.workspace = true
+
 [dev-dependencies]
-assert_cmd = "2.0"
-indoc = "2.0"
-predicates = "3.1"
-tempfile = "3.20"
+assert_cmd.workspace = true
+indoc.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
