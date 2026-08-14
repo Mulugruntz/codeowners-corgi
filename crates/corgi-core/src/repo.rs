@@ -66,7 +66,6 @@ impl RepoContext {
                 });
             }
         }
-
         // GitHub reads `.github/CODEOWNERS` for the whole repository. When it is
         // the only CODEOWNERS in the repo (no root `/CODEOWNERS`), promote its
         // package root to the repository root so `sync` covers every managed
@@ -79,7 +78,6 @@ impl RepoContext {
                 }
             }
         }
-
         packages.sort_by(|left, right| left.root.as_str().cmp(right.root.as_str()));
         Ok(packages)
     }
@@ -92,7 +90,6 @@ impl RepoContext {
             .iter()
             .map(|package| (package.root.clone(), Vec::new()))
             .collect::<BTreeMap<_, _>>();
-
         let files = self.walk_files()?;
         for file in files {
             let Some(best_root) = packages
@@ -106,7 +103,6 @@ impl RepoContext {
 
             by_package.entry(best_root).or_default().push(file);
         }
-
         for files in by_package.values_mut() {
             files.sort();
         }
@@ -124,7 +120,6 @@ impl RepoContext {
         if existing.as_deref() == Some(content) {
             return Ok(false);
         }
-
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
             let mut temp = NamedTempFile::new_in(parent)?;
@@ -158,7 +153,6 @@ impl RepoContext {
             )));
         };
         let end_idx = search_from + end_offset;
-
         let prefix = text[..begin_idx].to_string();
         let end_line_end = text[end_idx..]
             .find('\n')
@@ -179,7 +173,6 @@ impl RepoContext {
         builder.git_ignore(true);
         builder.git_global(true);
         builder.git_exclude(true);
-
         let mut files = Vec::new();
         for entry in builder.build() {
             let entry = entry.map_err(|error| CorgiError::Message(error.to_string()))?;
@@ -190,7 +183,6 @@ impl RepoContext {
             {
                 continue;
             }
-
             let absolute = utf8_path(entry.path())?;
             let relative = absolute
                 .strip_prefix(&self.root)

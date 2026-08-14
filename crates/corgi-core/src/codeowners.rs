@@ -44,7 +44,6 @@ pub struct Rule {
 
 #[derive(Clone, Debug)]
 pub struct RuleMatch {
-    pub pattern: String,
     pub owners: Vec<String>,
 }
 
@@ -224,7 +223,6 @@ pub fn select_auto_rule<'a>(
             .count();
         let score = (literal_len, rule.pattern.len());
         let matched = RuleMatch {
-            pattern: rule.pattern.clone(),
             owners: rule.owners.clone(),
         };
         if best

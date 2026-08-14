@@ -5,7 +5,14 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crate::error::{CorgiError, Result};
 
 pub fn repo_relative_string(path: &Utf8Path) -> String {
-    format!("/{}", path.as_str())
+    let mut rendered = String::from("/");
+    for (index, component) in path.iter().enumerate() {
+        if index > 0 {
+            rendered.push('/');
+        }
+        rendered.push_str(component);
+    }
+    rendered
 }
 
 pub fn rename_map(repo_root: &Utf8Path) -> Result<BTreeMap<Utf8PathBuf, Utf8PathBuf>> {

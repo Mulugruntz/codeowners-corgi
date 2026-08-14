@@ -1,6 +1,7 @@
 use crate::{
     codeowners::{EntryKind, Item, Manifest},
     error::{CorgiError, Result},
+    git::repo_relative_string,
     repo::{
         GENERATED_BEGIN, GENERATED_END, GITHUB_CODEOWNERS, RepoContext,
         repo_relative_from_manifest_path,
@@ -26,7 +27,7 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
                     )));
                 }
                 let repo_relative = repo_relative_from_manifest_path(package, &entry.path)?;
-                let mut line = format!("/{}", repo_relative.as_str());
+                let mut line = repo_relative_string(&repo_relative);
                 for owner in entry.owners {
                     line.push(' ');
                     line.push_str(&owner);
