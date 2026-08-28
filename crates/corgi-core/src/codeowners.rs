@@ -190,6 +190,7 @@ pub struct RuleMatcher {
 
 impl RuleMatcher {
     pub fn new(pattern: &str) -> Result<Self> {
+        validate_codeowners_pattern(pattern)?;
         let mut builder = GitignoreBuilder::new("/");
         builder
             .add_line(None, pattern)
@@ -265,6 +266,7 @@ fn parse_rule(line: &str) -> Result<Option<(String, Vec<String>)>> {
         return Err(CorgiError::Parse(line.to_string()));
     }
     let pattern = tokens[0].clone();
+    validate_codeowners_pattern(&pattern)?;
     let owners = tokens
         .into_iter()
         .skip(1)
@@ -279,6 +281,7 @@ fn parse_entry_line(line: &str) -> Result<(String, Vec<String>)> {
         return Err(CorgiError::Parse(line.to_string()));
     }
     let path = tokens[0].clone();
+    validate_codeowners_pattern(&path)?;
     let owners = tokens
         .into_iter()
         .skip(1)
@@ -323,8 +326,9 @@ fn split_tokens(input: &str) -> Vec<String> {
 
 fn escape_token(value: &str) -> String {
     let mut escaped = String::new();
-    for character in value.chars() {
+    for (index, character) in value.chars().enumerate() {
         match character {
+            '#' if index == 0 => escaped.push_str("\\#"),
             '\\' => escaped.push_str("\\\\"),
             ' ' => escaped.push_str("\\ "),
             '\t' => escaped.push_str("\\\t"),
@@ -332,6 +336,21 @@ fn escape_token(value: &str) -> String {
         }
     }
     escaped
+}
+
+/// Reject CODEOWNERS patterns that use `.gitignore`-only constructs.
+///
+/// GitHub CODEOWNERS does not support `!` negation. The `ignore` crate would
+/// silently interpret `!foo` as a negation pattern, which differs from any
+/// CODEOWNERS specification. Reject it at parse time so behavior is deliberate.
+fn validate_codeowners_pattern(pattern: &str) -> Result<()> {
+    if pattern.starts_with('!') {
+        return Err(CorgiError::Parse(format!(
+            "unsupported CODEOWNERS negation pattern: `{pattern}` \
+             (GitHub CODEOWNERS does not support `!` negation)"
+        )));
+    }
+    Ok(())
 }
 
 fn is_comment_or_blank(line: &str) -> bool {
@@ -1004,6 +1023,106 @@ mod tests {
         let rules: Vec<_> = m.rules().collect();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].pattern, "/src/**");
+    }
+
+    // ── CODEOWNERS syntax contract ────────────────────────────────
+
+    #[test]
+    fn negation_pattern_rejected_in_entry() {
+        let err = Manifest::parse("!foo @team\n").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("negation"), "got: {msg}");
+        assert!(
+            msg.contains("!foo"),
+            "error should identify the pattern: {msg}"
+        );
+    }
+
+    #[test]
+    fn negation_pattern_rejected_in_rule() {
+        let err = Manifest::parse("# Rule[auto-assign]: !excluded @team\n").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("negation"), "got: {msg}");
+        assert!(
+            msg.contains("!excluded"),
+            "error should identify the pattern: {msg}"
+        );
+    }
+
+    #[test]
+    fn negation_pattern_rejected_in_rule_matcher() {
+        match RuleMatcher::new("!foo") {
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(msg.contains("negation"), "got: {msg}");
+            }
+            Ok(_) => panic!("expected error for negation pattern"),
+        }
+    }
+
+    #[test]
+    fn character_range_classified_as_pattern() {
+        // GitHub CODEOWNERS supports [abc] character classes via fnmatch.
+        // CORGI accepts them; they are classified as pattern entries.
+        let m = Manifest::parse("/src/[abc].rs @team\n").unwrap();
+        assert!(m.has_patterns());
+        match &m.items[0] {
+            Item::Entry(e) => {
+                assert_eq!(e.kind, EntryKind::Pattern);
+                assert_eq!(e.path, "/src/[abc].rs");
+            }
+            _ => panic!("expected entry"),
+        }
+    }
+
+    #[test]
+    fn character_range_matches_correctly() {
+        let m = RuleMatcher::new("/file[0-9].rs").unwrap();
+        assert!(m.matches("/file3.rs"));
+        assert!(!m.matches("/fileX.rs"));
+    }
+
+    #[test]
+    fn escaped_hash_parsed_as_literal() {
+        // GitHub CODEOWNERS supports \# to refer to files named #...
+        // The backslash is consumed by tokenization; the resulting path
+        // starts with # which is the literal filename.
+        let (path, owners) = parse_entry_line(r"\#important @team").unwrap();
+        assert_eq!(path, "#important");
+        assert_eq!(owners, vec!["@team"]);
+    }
+
+    #[test]
+    fn escape_token_handles_leading_hash() {
+        // When a token starts with #, escape_token must emit \# so the
+        // rendered line is not misinterpreted as a comment.
+        assert_eq!(escape_token("#file"), "\\#file");
+    }
+
+    #[test]
+    fn escaped_hash_roundtrip() {
+        let original = r"\#file @owner";
+        let (path, owners) = parse_entry_line(original).unwrap();
+        assert_eq!(path, "#file");
+        let escaped = escape_token(&path);
+        assert_eq!(escaped, "\\#file");
+        // Re-parsing the escaped output must produce the same path.
+        let (path2, _) = parse_entry_line(&format!("{escaped} {}", owners[0])).unwrap();
+        assert_eq!(path2, path);
+    }
+
+    // ── Windows/platform path conversion ──────────────────────────
+
+    #[cfg(windows)]
+    #[test]
+    fn repo_relative_string_normalizes_backslashes() {
+        use crate::git::repo_relative_string;
+        use camino::Utf8Path;
+        // On Windows, Utf8Path::iter() normalizes backslash separators.
+        let path = Utf8Path::new("src\\lib.rs");
+        let rendered = repo_relative_string(path);
+        assert_eq!(rendered, "/src/lib.rs");
+        assert!(!rendered.contains('\\'), "CODEOWNERS must use / separators");
     }
 
     // ── property-based tests ──────────────────────────────────────

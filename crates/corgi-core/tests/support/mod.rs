@@ -37,6 +37,10 @@ impl TestRepo {
         fs::read_to_string(self.dir.path().join(relative)).expect("read file")
     }
 
+    pub fn read_bytes(&self, relative: &str) -> Vec<u8> {
+        fs::read(self.dir.path().join(relative)).expect("read file bytes")
+    }
+
     pub fn git<I, S>(&self, args: I)
     where
         I: IntoIterator<Item = S>,

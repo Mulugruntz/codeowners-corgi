@@ -185,15 +185,7 @@ Tests that modify corresponding behavior must preserve or intentionally update t
 
 ### CODEOWNERS syntax
 
-Do not assume CODEOWNERS syntax is identical to `.gitignore` syntax merely because implementation code uses the `ignore` crate.
-
-Tests define the syntax CORGI intentionally accepts. GitHub CODEOWNERS does not support every `.gitignore` construct. In particular, be cautious around:
-
-* `!` negation
-* `[ ]` character ranges
-* escaping a leading `#`
-
-Do not accidentally make unsupported constructs valid because an underlying matcher accepts them unless CORGI intentionally documents an extension.
+CORGI follows GitHub CODEOWNERS syntax. Keep parser, matcher, migration, and rendering behavior consistent with that specification, and add focused tests for syntax changes.
 
 ### Test repository fixtures
 

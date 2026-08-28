@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::{
     codeowners::{Entry, EntryKind, Item, Manifest, Rule, select_auto_rule},
     error::{CorgiError, Result},
     git::rename_map,
-    repo::{RepoContext, manifest_display_path, repo_relative_from_manifest_path},
+    repo::{
+        PackageInfo, RepoContext, manifest_display_path, path_has_prefix,
+        repo_relative_from_manifest_path,
+    },
 };
 
 pub fn run(repo: &RepoContext) -> Result<i32> {
@@ -44,10 +47,12 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         parsed.insert(package.root.clone(), manifest);
     }
 
+    // Phase 2: compute all outputs before writing any files so that a
+    // validation or computation failure cannot leave a partial write.
     let mut used_existing = BTreeSet::new();
-    let mut changed = false;
     let mut unowned = false;
     let mut unowned_by_manifest = BTreeMap::<String, Vec<String>>::new();
+    let mut planned_writes = Vec::new();
 
     for package in &packages {
         let Some(files) = managed_files.get(&package.root) else {
@@ -75,9 +80,14 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
                 let mut preserved = existing.clone();
                 preserved.path = display_path.clone();
                 preserved
-            } else if let Some((old_path, mut preserved)) =
-                find_renamed_entry(file, &renames, &existing_entries, &used_existing)?
-            {
+            } else if let Some((old_path, mut preserved)) = find_renamed_entry(
+                file,
+                &renames,
+                &existing_entries,
+                &used_existing,
+                &package.root,
+                &packages,
+            )? {
                 used_existing.insert(old_path);
                 preserved.path = display_path.clone();
                 preserved
@@ -123,7 +133,13 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
             rendered_local
         };
 
-        changed |= repo.write_if_changed(&package.manifest_path, &rendered)?;
+        planned_writes.push((package.manifest_path.clone(), rendered));
+    }
+
+    // Phase 3: write all computed outputs.
+    let mut changed = false;
+    for (path, content) in &planned_writes {
+        changed |= repo.write_if_changed(path, content)?;
     }
 
     if unowned {
@@ -149,9 +165,22 @@ fn find_renamed_entry(
     renames: &BTreeMap<Utf8PathBuf, Utf8PathBuf>,
     existing_entries: &BTreeMap<Utf8PathBuf, Entry>,
     used_existing: &BTreeSet<Utf8PathBuf>,
+    current_root: &Utf8Path,
+    packages: &[PackageInfo],
 ) -> Result<Option<(Utf8PathBuf, Entry)>> {
     for (old_path, renamed_path) in renames {
         if renamed_path != new_path || used_existing.contains(old_path) {
+            continue;
+        }
+        // Only preserve ownership for renames within the same package.
+        // Cross-package renames must use the destination package's rules
+        // instead of leaking the source package's ownership.
+        let source_root = packages
+            .iter()
+            .filter(|p| path_has_prefix(old_path, &p.root))
+            .max_by_key(|p| p.root.as_str().len())
+            .map(|p| p.root.as_path());
+        if source_root != Some(current_root) {
             continue;
         }
         if let Some(entry) = existing_entries.get(old_path) {

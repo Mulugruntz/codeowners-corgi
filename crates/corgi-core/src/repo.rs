@@ -279,7 +279,7 @@ pub fn repo_relative_from_manifest_path(
     Ok(package.root.join(trimmed))
 }
 
-fn path_has_prefix(path: &Utf8Path, prefix: &Utf8Path) -> bool {
+pub(crate) fn path_has_prefix(path: &Utf8Path, prefix: &Utf8Path) -> bool {
     prefix.as_str().is_empty() || path == prefix || path.starts_with(prefix)
 }
 
