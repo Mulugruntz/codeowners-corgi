@@ -6,6 +6,8 @@
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
+![CORGI mascot, a corgi jumping to the right while carrying a CODEOWNERS file](docs/logo-corgi-400px.png)
+
 **Keep `CODEOWNERS` exhaustive, deterministic, and synchronized with the files Git actually sees.**
 
 CORGI (**Co**de**O**wners **R**econciler for **G**it **I**ntegrity) is an opinionated Rust CLI for maintaining exhaustive `CODEOWNERS` manifests.
