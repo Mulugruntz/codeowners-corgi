@@ -19,6 +19,8 @@
 /crates/corgi-core/src/sync.rs @Mulugruntz
 /crates/corgi-core/tests/behavior.rs @Mulugruntz
 /crates/corgi-core/tests/support/mod.rs @Mulugruntz
+/docs/logo-corgi-400px.png @Mulugruntz
+/docs/logo-corgi.png @Mulugruntz
 /prek.toml @Mulugruntz
 /src/cli.rs @Mulugruntz
 /src/main.rs @Mulugruntz

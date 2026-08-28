@@ -1,6 +1,48 @@
 # CORGI
 
+[![GitHub Release](https://img.shields.io/github/v/release/Mulugruntz/codeowners-corgi)](https://github.com/Mulugruntz/codeowners-corgi/releases/latest)
+[![Tests](https://github.com/Mulugruntz/codeowners-corgi/actions/workflows/rust-tests.yaml/badge.svg)](https://github.com/Mulugruntz/codeowners-corgi/actions/workflows/rust-tests.yaml)
+[![Lint & format](https://github.com/Mulugruntz/codeowners-corgi/actions/workflows/rust-lint-and-format.yaml/badge.svg)](https://github.com/Mulugruntz/codeowners-corgi/actions/workflows/rust-lint-and-format.yaml)
+[![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](https://www.rust-lang.org/)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+
+![CORGI mascot, a corgi jumping to the right while carrying a CODEOWNERS file](docs/logo-corgi-400px.png)
+
+**Keep `CODEOWNERS` exhaustive, deterministic, and synchronized with the files Git actually sees.**
+
 CORGI (**Co**de**O**wners **R**econciler for **G**it **I**ntegrity) is an opinionated Rust CLI for maintaining exhaustive `CODEOWNERS` manifests.
+
+Instead of relying on broad wildcard rules as the final source of truth, CORGI reconciles ownership against the repository itself: adding new files, removing deleted ones, preserving ownership across renames where appropriate, respecting nested package boundaries and Git ignore rules, and reporting files that still need an owner.
+
+It can also aggregate package-level manifests into the repository-wide `.github/CODEOWNERS` file GitHub reads.
+
+```mermaid
+flowchart TD
+    A["Git repository<br/>+ <code>CODEOWNERS</code>"] --> B["<code>corgi sync</code>"]
+
+    B --> C["Add new files"]
+    B --> D["Remove deleted files"]
+    B --> E["Reconcile renames"]
+    B --> F["Report unowned files"]
+
+    C --> G["Exhaustive package<br/><code>CODEOWNERS</code>"]
+    D --> G
+    E --> G
+    F --> G
+
+    G --> H["<code>corgi aggregate</code>"]
+    H --> I["<code>.github/CODEOWNERS</code>"]
+```
+
+### The model
+
+* Every directory containing a `CODEOWNERS` file is a package root.
+* Every managed, non-ignored file gets one explicit ownership entry.
+* Nested package roots take ownership away from ancestor package roots.
+* `# Rule[auto-assign]: ...` rules assign owners to new files without overwriting existing explicit ownership.
+* `corgi sync` reconciles package manifests with Git-aware repository state.
+* `corgi aggregate` builds the repository-wide generated section in `.github/CODEOWNERS`.
+* `corgi migrate` converts conventional wildcard-based manifests into CORGI's exhaustive format.
 
 ## Commands
 
