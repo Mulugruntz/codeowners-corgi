@@ -8,7 +8,7 @@ on:
 
 jobs:
   rust-lint-and-format:
-    runs-on: ubuntu-latest
+    runs-on: avrea-ubuntu-latest-2-vcpu
 
     steps:
       - name: Check out repository
