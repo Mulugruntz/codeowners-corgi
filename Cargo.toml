@@ -19,6 +19,7 @@ git2 = { version = "0.21.0", default-features = false }
 ignore = "0.4"
 indoc = "2.0"
 predicates = "3.1"
+proptest = "1.6"
 regex = "1.11"
 tempfile = "3.20"
 thiserror = "2.0"
@@ -44,6 +45,5 @@ corgi-core.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
-indoc.workspace = true
 predicates.workspace = true
 tempfile.workspace = true

@@ -23,11 +23,16 @@ CORGI intentionally has exactly two crates:
     src/                       # corgi-cli sources
       cli.rs
       main.rs
-    tests/                     # CLI behavior/integration tests
+    tests/
+      cli.rs                   # CLI behavior tests (small)
     crates/
       corgi-core/
         Cargo.toml
-        src/                   # reconciliation engine
+        src/                   # reconciliation engine (with inline unit tests)
+        tests/
+          behavior.rs          # core integration tests
+          support/
+            mod.rs             # TestRepo helper
 
 - `corgi-cli` is the root package and produces the `corgi` binary. Keep it thin: argument parsing, command dispatch, top-level error rendering, and process exit behavior belong here.
 - `corgi-core` owns repository discovery, CODEOWNERS parsing/modeling, Git-aware reconciliation, migration, and aggregation.
@@ -136,13 +141,106 @@ Keep the project's declared MSRV explicit when the project has an MSRV policy.
 
 ## Testing
 
-- Add or update tests for behavioral changes.
-- Prefer focused unit tests close to implementation details.
-- Use integration tests for externally observable crate behavior.
-- Test error cases and boundary conditions, not only the happy path.
-- Avoid tests that depend unnecessarily on timing, global state, network access, or execution order.
-- Prefer deterministic test fixtures.
-- A bug fix should normally include a regression test.
+CORGI has three test layers. Use the lowest layer that can prove the behavior.
+
+### Test placement
+
+1. **Unit tests in `crates/corgi-core/src/*.rs`**
+
+    * Use `#[cfg(test)] mod tests` in the module that owns the behavior.
+    * Use these for parsing, matching, sorting, path conversion, generated-section handling, owner selection, Git-status parsing, and other deterministic logic.
+    * Unit tests may access private functions. Do not make an internal function `pub` only to test it.
+    * Prefer table-driven tests when validating multiple syntax or path cases.
+
+2. **Core integration tests in `crates/corgi-core/tests/`**
+
+    * Use these when behavior requires a real temporary repository, filesystem state, `.gitignore`, Git rename detection, or interaction among multiple core modules.
+    * Call `corgi_core::sync`, `corgi_core::aggregate`, or `corgi_core::migrate` directly.
+    * Do not spawn the `corgi` binary when the behavior belongs to `corgi-core`.
+    * Use `tests/support/mod.rs` for the shared `TestRepo` helper.
+
+3. **CLI tests in the root `tests/cli.rs`**
+
+    * Reserve these for argument parsing, `--help`, `--version`, command dispatch, stderr formatting, and process exit codes.
+    * A CLI test may exercise a small end-to-end smoke scenario, but reconciliation behavior should primarily be tested in `corgi-core`.
+
+### Core behavioral invariants
+
+Tests that modify corresponding behavior must preserve or intentionally update these invariants:
+
+* Every managed non-ignored file belongs to exactly one package: the deepest package root containing it.
+* Existing explicit ownership is preserved when re-syncing an unchanged file.
+* Auto-assignment rules apply only to files without existing explicit ownership.
+* The most specific matching auto-assignment rule wins.
+* Equal-specificity behavior must remain deterministic (first match wins).
+* Migration follows CODEOWNERS last-match-wins precedence for pattern resolution.
+* Nested package roots take ownership away from ancestor package roots.
+* Moving or renaming files across package boundaries requires an explicit regression test. Do not assume ownership can safely be copied across the boundary.
+* `sync` must not modify the generated aggregate section of `.github/CODEOWNERS`.
+* `aggregate` must not treat the previous generated section as source ownership data.
+* Local `.github/CODEOWNERS` content before and after the generated section must be preserved.
+* Output ordering must be deterministic.
+* A successful fully reconciled operation is idempotent: running it again must not modify files.
+* Process/core status code semantics: 0 = no change, 1 = changed/unresolved, 2 = fatal error (CLI only).
+
+### CODEOWNERS syntax
+
+CORGI follows GitHub CODEOWNERS syntax. Keep parser, matcher, migration, and rendering behavior consistent with that specification, and add focused tests for syntax changes.
+
+### Test repository fixtures
+
+Use temporary directories; never modify the checkout containing the tests.
+
+Keep repeated Git/filesystem setup behind the shared `TestRepo` helper in `crates/corgi-core/tests/support/mod.rs`.
+
+Configure repository-local Git identity where tests create commits. Do not rely on global Git username, email, branch-name defaults, or unrelated developer configuration.
+
+Use real Git only for behavior that actually depends on Git. Pure parsing of Git command output should be unit-tested with byte fixtures.
+
+### Test shape
+
+Prefer one behavioral contract per test. Avoid combining unrelated behaviors into tests such as `handles_additions_deletions_errors_and_idempotency`. Prefer focused names such as:
+
+    sync_adds_new_files
+    sync_removes_deleted_entries
+    sync_preserves_owner_on_rename_within_a_package
+    migrate_uses_the_last_matching_pattern
+    aggregate_preserves_content_after_the_generated_section
+    parser_rejects_unsupported_codeowners_negation
+
+For every bug fix, add a regression test that fails before the fix whenever practical.
+
+### Idempotency
+
+Distinguish:
+
+* **Stable but unresolved**: A repository with unowned files consistently returns status 1 but does not modify files on the second run.
+* **Fully reconciled and idempotent**: All files are owned, status 0, files are byte-identical after re-running.
+
+### Failure behavior
+
+For operations that rewrite manifests, test realistic fatal failures for atomicity. Prefer implementations that read, validate, compute desired state, then write, rather than writing partial results before later validation can fail.
+
+### Property tests
+
+Use `proptest` (dev-dependency of `corgi-core`) selectively for invariants like escape/split roundtrips, render/parse semantic roundtrips, sort idempotency, and renderer determinism. Keep explicit example-based regression tests for important real-world cases.
+
+### Verification
+
+During development, run the narrowest relevant test first:
+
+    cargo test -p corgi-core <test-name>
+    cargo test -p corgi-core
+    cargo test -p corgi-cli --test cli
+
+Before considering a Rust change complete, run:
+
+    cargo fmt --all -- --check
+    cargo check --workspace --all-targets
+    cargo test --workspace --all-features
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+Do not claim a command passed unless it was actually executed successfully.
 
 ## Comments and documentation
 

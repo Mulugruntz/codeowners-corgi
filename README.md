@@ -38,6 +38,19 @@ The most specific matching rule wins, and rules never overwrite an existing expl
 /src/lib.rs @org/backend
 ```
 
+## File visibility
+
+CORGI uses the `ignore` crate's WalkBuilder to discover files. This means:
+
+- Repository-local `.gitignore` and `.git/info/exclude` are honored.
+- **Machine-global Git ignores are not loaded.** CORGI explicitly disables global gitignore
+  (`core.excludesFile` from the global Git config) so that output is repository-deterministic
+  and does not depend on developer-specific machine configuration.
+- **Tracked-then-ignored files are not managed.** If a file was committed and later added to
+  `.gitignore`, the WalkBuilder follows `.gitignore` rules and does not consult Git's index.
+  The file will be excluded from CORGI's output. This is a known limitation of the
+  filesystem-walker approach.
+
 ## `.github/CODEOWNERS`
 
 Use a local section plus generated section markers:

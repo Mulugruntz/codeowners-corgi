@@ -15,3 +15,7 @@ ignore.workspace = true
 regex.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+indoc.workspace = true
+proptest.workspace = true

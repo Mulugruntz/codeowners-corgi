@@ -17,7 +17,9 @@
 /crates/corgi-core/src/migrate.rs @Mulugruntz
 /crates/corgi-core/src/repo.rs @Mulugruntz
 /crates/corgi-core/src/sync.rs @Mulugruntz
+/crates/corgi-core/tests/behavior.rs @Mulugruntz
+/crates/corgi-core/tests/support/mod.rs @Mulugruntz
 /prek.toml @Mulugruntz
 /src/cli.rs @Mulugruntz
 /src/main.rs @Mulugruntz
-/tests/behavior.rs @Mulugruntz
+/tests/cli.rs @Mulugruntz

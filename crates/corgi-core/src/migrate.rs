@@ -13,7 +13,11 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         return Ok(0);
     }
     let managed_files = repo.managed_files(&packages)?;
-    let mut changed = false;
+
+    // Compute all outputs before writing any files so that a parse or
+    // computation error in a later package cannot leave earlier manifests
+    // partially migrated.
+    let mut planned_writes = Vec::new();
 
     for package in &packages {
         let raw_text = repo.read_text(&package.manifest_path)?;
@@ -84,7 +88,12 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
             rendered_local
         };
 
-        changed |= repo.write_if_changed(&package.manifest_path, &rendered)?;
+        planned_writes.push((package.manifest_path.clone(), rendered));
+    }
+
+    let mut changed = false;
+    for (path, content) in &planned_writes {
+        changed |= repo.write_if_changed(path, content)?;
     }
 
     if changed { sync_run(repo) } else { Ok(0) }
