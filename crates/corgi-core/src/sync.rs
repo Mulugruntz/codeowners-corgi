@@ -190,3 +190,83 @@ pub fn combine_github_sections(local: &str, generated: Option<&str>, suffix: &st
         format!("{content}\n")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combine_local_only() {
+        let result = combine_github_sections("/file @team\n", None, "");
+        assert_eq!(result, "/file @team\n");
+    }
+
+    #[test]
+    fn combine_local_and_generated() {
+        let result = combine_github_sections(
+            "/file @team\n",
+            Some("# BEGIN CORGI GENERATED\n/x @a\n# END CORGI GENERATED\n"),
+            "",
+        );
+        assert_eq!(
+            result,
+            "/file @team\n\n# BEGIN CORGI GENERATED\n/x @a\n# END CORGI GENERATED\n"
+        );
+    }
+
+    #[test]
+    fn combine_local_generated_and_suffix() {
+        let result = combine_github_sections(
+            "# local\n",
+            Some("# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n"),
+            "# suffix\n",
+        );
+        assert!(result.contains("# local"));
+        assert!(result.contains("# BEGIN CORGI GENERATED"));
+        assert!(result.contains("# suffix"));
+    }
+
+    #[test]
+    fn combine_empty_local_with_generated() {
+        let result = combine_github_sections(
+            "",
+            Some("# BEGIN CORGI GENERATED\n/x @a\n# END CORGI GENERATED\n"),
+            "",
+        );
+        assert_eq!(
+            result,
+            "# BEGIN CORGI GENERATED\n/x @a\n# END CORGI GENERATED\n"
+        );
+    }
+
+    #[test]
+    fn combine_preserves_suffix() {
+        let result = combine_github_sections(
+            "",
+            Some("# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n"),
+            "# important suffix\n",
+        );
+        assert!(result.ends_with("# important suffix\n"));
+    }
+
+    #[test]
+    fn combine_no_generated_strips_trailing_blank_lines() {
+        let result = combine_github_sections("/file @team\n\n", None, "");
+        assert_eq!(result, "/file @team\n");
+    }
+
+    #[test]
+    fn combine_deterministic() {
+        let a = combine_github_sections(
+            "# local\n",
+            Some("# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n"),
+            "",
+        );
+        let b = combine_github_sections(
+            "# local\n",
+            Some("# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n"),
+            "",
+        );
+        assert_eq!(a, b);
+    }
+}

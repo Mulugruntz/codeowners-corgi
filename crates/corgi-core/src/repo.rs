@@ -135,43 +135,16 @@ impl RepoContext {
     }
 
     pub fn split_github_sections(&self, text: &str) -> Result<GithubSections> {
-        let Some(begin_idx) = text.find(GENERATED_BEGIN) else {
-            return Ok(GithubSections {
-                prefix: text.to_string(),
-                generated: None,
-                suffix: String::new(),
-            });
-        };
-        // Search for the end marker only after the begin marker so that a
-        // matching literal in the local section (for example inside a
-        // comment) can't be mistaken for the real end.
-        let search_from = begin_idx + GENERATED_BEGIN.len();
-        let Some(end_offset) = text[search_from..].find(GENERATED_END) else {
-            return Err(CorgiError::Message(format!(
-                "{} is missing '{}'",
-                GITHUB_CODEOWNERS, GENERATED_END
-            )));
-        };
-        let end_idx = search_from + end_offset;
-        let prefix = text[..begin_idx].to_string();
-        let end_line_end = text[end_idx..]
-            .find('\n')
-            .map(|offset| end_idx + offset + 1)
-            .unwrap_or(text.len());
-        let generated = text[begin_idx..end_line_end].to_string();
-        let suffix = text[end_line_end..].to_string();
-        Ok(GithubSections {
-            prefix,
-            generated: Some(generated),
-            suffix,
-        })
+        split_github_sections(text)
     }
 
     fn walk_files(&self) -> Result<Vec<Utf8PathBuf>> {
         let mut builder = WalkBuilder::new(&self.root);
         builder.hidden(false);
         builder.git_ignore(true);
-        builder.git_global(true);
+        // Machine-global Git ignores must not affect CORGI output; only
+        // repository-local ignore sources produce deterministic results.
+        builder.git_global(false);
         builder.git_exclude(true);
         let mut files = Vec::new();
         for entry in builder.build() {
@@ -196,6 +169,82 @@ impl RepoContext {
 
         files.sort();
         Ok(files)
+    }
+}
+
+/// Split `.github/CODEOWNERS` content into prefix, generated section, and suffix.
+///
+/// Markers must appear as entire lines (ignoring trailing whitespace / CR).
+/// Substring matches embedded inside a larger line are ignored.
+fn split_github_sections(text: &str) -> Result<GithubSections> {
+    let mut begin_line_start: Option<usize> = None;
+    let mut end_line_end: Option<usize> = None;
+
+    let mut pos = 0;
+    for line in text.lines() {
+        let line_start = pos;
+        // Advance pos past this line and its terminator.
+        pos += line.len();
+        if pos < text.len() && text.as_bytes()[pos] == b'\n' {
+            pos += 1;
+        } else if pos + 1 < text.len()
+            && text.as_bytes()[pos] == b'\r'
+            && text.as_bytes()[pos + 1] == b'\n'
+        {
+            pos += 2;
+        }
+        let line_end = pos; // one past the newline (or end of text)
+
+        let trimmed = line.trim_end();
+        if trimmed == GENERATED_BEGIN {
+            if begin_line_start.is_some() {
+                return Err(CorgiError::Message(format!(
+                    "{} contains duplicate '{}' markers",
+                    GITHUB_CODEOWNERS, GENERATED_BEGIN
+                )));
+            }
+            begin_line_start = Some(line_start);
+        } else if trimmed == GENERATED_END {
+            if end_line_end.is_some() {
+                return Err(CorgiError::Message(format!(
+                    "{} contains duplicate '{}' markers",
+                    GITHUB_CODEOWNERS, GENERATED_END
+                )));
+            }
+            end_line_end = Some(line_end);
+        }
+    }
+
+    match (begin_line_start, end_line_end) {
+        (None, None) => Ok(GithubSections {
+            prefix: text.to_string(),
+            generated: None,
+            suffix: String::new(),
+        }),
+        (Some(_), None) => Err(CorgiError::Message(format!(
+            "{} is missing '{}'",
+            GITHUB_CODEOWNERS, GENERATED_END
+        ))),
+        (None, Some(_)) => Err(CorgiError::Message(format!(
+            "{} has '{}' without preceding '{}'",
+            GITHUB_CODEOWNERS, GENERATED_END, GENERATED_BEGIN
+        ))),
+        (Some(begin), Some(end)) => {
+            if begin >= end {
+                return Err(CorgiError::Message(format!(
+                    "{} has '{}' before '{}'",
+                    GITHUB_CODEOWNERS, GENERATED_END, GENERATED_BEGIN
+                )));
+            }
+            let prefix = text[..begin].to_string();
+            let generated = text[begin..end].to_string();
+            let suffix = text[end..].to_string();
+            Ok(GithubSections {
+                prefix,
+                generated: Some(generated),
+                suffix,
+            })
+        }
     }
 }
 
@@ -245,5 +294,271 @@ impl PackageInfo {
         } else {
             self.manifest_path.as_str().to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::repo_relative_string;
+
+    // ── split_github_sections ─────────────────────────────────────
+
+    #[test]
+    fn split_no_generated_section() {
+        let text = "# local content\n/.github/ci.yml @team\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, text);
+        assert!(s.generated.is_none());
+        assert!(s.suffix.is_empty());
+    }
+
+    #[test]
+    fn split_valid_generated_section() {
+        let text = "# local\n\n# BEGIN CORGI GENERATED\n/file @team\n# END CORGI GENERATED\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, "# local\n\n");
+        assert_eq!(
+            s.generated.as_deref(),
+            Some("# BEGIN CORGI GENERATED\n/file @team\n# END CORGI GENERATED\n")
+        );
+        assert!(s.suffix.is_empty());
+    }
+
+    #[test]
+    fn split_content_after_generated_section() {
+        let text = "# prefix\n# BEGIN CORGI GENERATED\n/x @a\n# END CORGI GENERATED\n# suffix\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, "# prefix\n");
+        assert!(s.generated.is_some());
+        assert_eq!(s.suffix, "# suffix\n");
+    }
+
+    #[test]
+    fn split_empty_generated_section() {
+        let text = "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, "");
+        assert_eq!(
+            s.generated.as_deref(),
+            Some("# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n")
+        );
+    }
+
+    #[test]
+    fn split_missing_end_marker() {
+        let text = "# BEGIN CORGI GENERATED\n/file @team\n";
+        let err = split_github_sections(text).unwrap_err();
+        assert!(err.to_string().contains("missing"), "got: {err}");
+    }
+
+    #[test]
+    fn split_missing_begin_marker() {
+        let text = "/file @team\n# END CORGI GENERATED\n";
+        let err = split_github_sections(text).unwrap_err();
+        assert!(err.to_string().contains("without preceding"), "got: {err}");
+    }
+
+    #[test]
+    fn split_end_before_begin() {
+        let text = "# END CORGI GENERATED\n# BEGIN CORGI GENERATED\n";
+        let err = split_github_sections(text).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("without preceding") || msg.contains("before"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn split_duplicate_begin_markers() {
+        let text = "# BEGIN CORGI GENERATED\n# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n";
+        let err = split_github_sections(text).unwrap_err();
+        assert!(err.to_string().contains("duplicate"), "got: {err}");
+    }
+
+    #[test]
+    fn split_duplicate_end_markers() {
+        let text = "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n# END CORGI GENERATED\n";
+        let err = split_github_sections(text).unwrap_err();
+        assert!(err.to_string().contains("duplicate"), "got: {err}");
+    }
+
+    #[test]
+    fn split_marker_embedded_mid_line_is_ignored() {
+        // A line containing the marker text but not as the entire line
+        // must not be treated as a marker.
+        let text = "# see # BEGIN CORGI GENERATED for details\n/file @team\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, text);
+        assert!(s.generated.is_none());
+    }
+
+    #[test]
+    fn split_empty_file() {
+        let s = split_github_sections("").unwrap();
+        assert_eq!(s.prefix, "");
+        assert!(s.generated.is_none());
+    }
+
+    #[test]
+    fn split_no_trailing_newline_after_end() {
+        let text = "# BEGIN CORGI GENERATED\n/file @team\n# END CORGI GENERATED";
+        let s = split_github_sections(text).unwrap();
+        assert!(s.generated.is_some());
+        assert!(s.suffix.is_empty());
+    }
+
+    #[test]
+    fn split_crlf_markers() {
+        let text =
+            "# prefix\r\n# BEGIN CORGI GENERATED\r\n/x @a\r\n# END CORGI GENERATED\r\n# suffix\r\n";
+        let s = split_github_sections(text).unwrap();
+        assert_eq!(s.prefix, "# prefix\r\n");
+        assert!(s.generated.is_some());
+        assert_eq!(s.suffix, "# suffix\r\n");
+    }
+
+    // ── path_has_prefix ──────────────────────────────────────────
+
+    #[test]
+    fn path_has_prefix_empty_matches_all() {
+        assert!(path_has_prefix(
+            Utf8Path::new("src/lib.rs"),
+            Utf8Path::new("")
+        ));
+    }
+
+    #[test]
+    fn path_has_prefix_exact() {
+        assert!(path_has_prefix(
+            Utf8Path::new("packages/api"),
+            Utf8Path::new("packages/api")
+        ));
+    }
+
+    #[test]
+    fn path_has_prefix_nested() {
+        assert!(path_has_prefix(
+            Utf8Path::new("packages/api/src/lib.rs"),
+            Utf8Path::new("packages/api")
+        ));
+    }
+
+    #[test]
+    fn path_has_prefix_no_match() {
+        assert!(!path_has_prefix(
+            Utf8Path::new("src/lib.rs"),
+            Utf8Path::new("packages/api")
+        ));
+    }
+
+    // ── manifest_display_path ────────────────────────────────────
+
+    #[test]
+    fn display_path_root_package() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::new(),
+            manifest_path: Utf8PathBuf::from("CODEOWNERS"),
+            is_github: false,
+        };
+        let result = manifest_display_path(&package, Utf8Path::new("src/lib.rs"));
+        assert_eq!(result, "/src/lib.rs");
+    }
+
+    #[test]
+    fn display_path_nested_package() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::from("packages/api"),
+            manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
+            is_github: false,
+        };
+        let result = manifest_display_path(&package, Utf8Path::new("packages/api/src/lib.rs"));
+        assert_eq!(result, "/src/lib.rs");
+    }
+
+    #[test]
+    fn display_path_github_package() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::from(".github"),
+            manifest_path: Utf8PathBuf::from(".github/CODEOWNERS"),
+            is_github: true,
+        };
+        let result = manifest_display_path(&package, Utf8Path::new(".github/workflows/ci.yml"));
+        assert_eq!(result, "/.github/workflows/ci.yml");
+    }
+
+    // ── repo_relative_from_manifest_path ─────────────────────────
+
+    #[test]
+    fn repo_relative_root_package() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::new(),
+            manifest_path: Utf8PathBuf::from("CODEOWNERS"),
+            is_github: false,
+        };
+        let result = repo_relative_from_manifest_path(&package, "/src/lib.rs").unwrap();
+        assert_eq!(result, Utf8PathBuf::from("src/lib.rs"));
+    }
+
+    #[test]
+    fn repo_relative_nested_package() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::from("packages/api"),
+            manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
+            is_github: false,
+        };
+        let result = repo_relative_from_manifest_path(&package, "/src/lib.rs").unwrap();
+        assert_eq!(result, Utf8PathBuf::from("packages/api/src/lib.rs"));
+    }
+
+    #[test]
+    fn repo_relative_empty_path_fails() {
+        let package = PackageInfo {
+            root: Utf8PathBuf::new(),
+            manifest_path: Utf8PathBuf::from("CODEOWNERS"),
+            is_github: false,
+        };
+        assert!(repo_relative_from_manifest_path(&package, "/").is_err());
+    }
+
+    // ── repo_relative_string ─────────────────────────────────────
+
+    #[test]
+    fn repo_relative_string_simple() {
+        assert_eq!(
+            repo_relative_string(Utf8Path::new("src/lib.rs")),
+            "/src/lib.rs"
+        );
+    }
+
+    #[test]
+    fn repo_relative_string_single_component() {
+        assert_eq!(
+            repo_relative_string(Utf8Path::new("README.md")),
+            "/README.md"
+        );
+    }
+
+    // ── PackageInfo::display_name ────────────────────────────────
+
+    #[test]
+    fn display_name_root() {
+        let p = PackageInfo {
+            root: Utf8PathBuf::new(),
+            manifest_path: Utf8PathBuf::from("CODEOWNERS"),
+            is_github: false,
+        };
+        assert_eq!(p.display_name(), "CODEOWNERS");
+    }
+
+    #[test]
+    fn display_name_nested() {
+        let p = PackageInfo {
+            root: Utf8PathBuf::from("packages/api"),
+            manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
+            is_github: false,
+        };
+        assert_eq!(p.display_name(), "packages/api/CODEOWNERS");
     }
 }
