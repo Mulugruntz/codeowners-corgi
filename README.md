@@ -147,6 +147,65 @@ hooks = [
 
 Use only `corgi-sync` (and omit `corgi-aggregate`) when another aggregation tool manages the repository-wide `CODEOWNERS` output.
 
+## CODEOWNERS compatibility
+
+`CODEOWNERS` is not a single standardized format. GitHub, GitLab, and Bitbucket share a common core syntax, but differ in file discovery, pattern matching, owner references, and provider-specific extensions.
+
+The table below shows whether **CORGI can safely manage each feature when used with that repository provider**.
+
+**Legend:** ✅ supported by CORGI · ❌ supported by the provider, but not currently supported by CORGI · blank = the provider does not provide that feature
+
+| Feature                                          | GitHub | GitLab | Bitbucket |
+|--------------------------------------------------|:------:|:------:|:---------:|
+| **Repository integration**                       |        |        |           |
+| Native repository-wide `CODEOWNERS` output       |   ✅   |  ❌¹   |    ❌²    |
+| Provider `CODEOWNERS` discovery / fallback rules |   ✅   |  ❌¹   |    ❌²    |
+| **Core syntax**                                  |        |        |           |
+| Full-line comments — `# comment`                 |   ✅   |   ✅   |    ✅     |
+| Inline comments — `*.rs @team # comment`         |  ❌³   |        |    ❌³    |
+| Multiple owners per rule                         |   ✅   |   ✅   |    ✅     |
+| Email addresses as owners                        |   ✅   |   ✅   |    ✅     |
+| User / team / group owner references             |   ✅   |   ✅   |    ✅     |
+| Root-anchored paths — `/src/lib.rs`              |   ✅   |   ✅   |    ✅     |
+| Relative / unanchored paths — `README.md`        |   ✅   |   ✅   |    ✅     |
+| Directory patterns — `/docs/`                    |   ✅   |   ✅   |    ✅     |
+| Wildcards — `*.rs`                               |   ✅   |   ✅   |    ✅     |
+| Single-character wildcard — `file?.rs`           |   ✅   |   ✅   |    ✅     |
+| Globstar — `/src/**`                             |   ✅   |   ✅   |    ✅     |
+| Last matching flat rule wins                     |   ✅   |  ✅⁴   |    ✅     |
+| **Pattern extensions**                           |        |        |           |
+| Character classes — `/file[0-9].rs`              |        |   ✅   |           |
+| Exclusion patterns — `!generated/**`             |        |   ❌   |           |
+| **GitLab extensions**                            |        |        |           |
+| Sections — `[Documentation]`                     |        |   ❌   |           |
+| Optional sections — `^[Documentation]`           |        |   ❌   |           |
+| Required approval count — `[Documentation][2]`   |        |   ❌   |           |
+| Section default owners — `[Documentation] @docs` |        |   ❌   |           |
+| Role owners — `@@maintainer`                     |        |  ✅⁵   |           |
+| **Bitbucket extensions**                         |        |        |           |
+| Group reviewer strategy — `:all`                 |        |        |    ✅⁵    |
+| Group reviewer strategy — `:random(2)`           |        |        |    ✅⁵    |
+| Group reviewer strategy — `:least_busy(3)`       |        |        |    ✅⁵    |
+| Repository-defined teams — `@teams/frontend`     |        |        |    ✅⁵    |
+| **CORGI extensions**                             |        |        |           |
+| Auto-assignment — `# Rule[auto-assign]: ...`     |   ✅   |   ✅   |    ✅     |
+
+¹ CORGI currently generates the repository-wide manifest at `.github/CODEOWNERS`. GitLab does not read that location: it searches `/CODEOWNERS`, `docs/CODEOWNERS`, then `.gitlab/CODEOWNERS`. Additionally, a root `/CODEOWNERS` used as a CORGI package manifest would take precedence over `.gitlab/CODEOWNERS`, so GitLab aggregation requires more than changing the output filename.
+
+² Bitbucket only reads `.bitbucket/CODEOWNERS`. CORGI does not currently generate its repository-wide aggregate there.
+
+³ GitHub and Bitbucket support inline comments, but CORGI does not preserve them when rewriting a manifest. Use full-line comments in CORGI-managed files.
+
+⁴ GitLab uses last-match-wins within each section, but multiple sections are evaluated independently. Flat manifests work with CORGI's model; GitLab section semantics do not.
+
+⁵ CORGI treats owner references as opaque tokens. Provider-specific forms such as GitLab roles and Bitbucket reviewer strategies or `@teams/...` references are preserved, but CORGI does not interpret or validate their provider-specific meaning.
+
+### Provider support
+
+Today, CORGI's repository-wide aggregation workflow is designed for **GitHub**.
+
+Most of the common `CODEOWNERS` syntax is also compatible with GitLab and Bitbucket, and provider-specific owner references are generally preserved. Full first-class support for those providers would additionally require provider-aware output locations and, for GitLab, support for its extended rule semantics.
+
 ## Development
 
 ```bash
