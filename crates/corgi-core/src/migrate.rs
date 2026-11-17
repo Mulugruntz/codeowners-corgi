@@ -96,7 +96,18 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         changed |= repo.write_if_changed(path, content)?;
     }
 
-    if changed { sync_run(repo) } else { Ok(0) }
+    if changed {
+        if repo.dry_run() {
+            // In dry-run mode the manifest files on disk still contain
+            // wildcard entries.  sync_run would reject them even though
+            // the planned writes would have converted them.  Skip the
+            // sync validation since no files were actually changed.
+            return Ok(1);
+        }
+        sync_run(repo)
+    } else {
+        Ok(0)
+    }
 }
 
 fn effective_owners(entries: &[Entry], path: &str) -> Result<Vec<String>> {
