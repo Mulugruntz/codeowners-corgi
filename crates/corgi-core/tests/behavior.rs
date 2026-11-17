@@ -1551,4 +1551,3 @@ fn aggregate_custom_output_is_idempotent() {
     assert_eq!(status, 0);
     assert_eq!(repo.read(".gitlab/CODEOWNERS"), first);
 }
-

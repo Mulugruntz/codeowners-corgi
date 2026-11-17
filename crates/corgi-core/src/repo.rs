@@ -16,7 +16,7 @@ pub const GENERATED_BEGIN: &str = "# BEGIN CORGI GENERATED";
 pub const GENERATED_END: &str = "# END CORGI GENERATED";
 
 /// Detected hosting platform, used to choose the default aggregate output path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Platform {
     /// GitHub — `.github/CODEOWNERS`
     GitHub,
@@ -52,7 +52,7 @@ pub struct PackageInfo {
     /// `.github/CODEOWNERS` is [`Platform::GitHub`]; other platform-specific
     /// paths (`.gitlab/CODEOWNERS`, `.bitbucket/CODEOWNERS`) are marked so
     /// `aggregate` can skip them as source manifests.
-    pub platform: Platform,
+    pub(crate) platform: Platform,
 }
 
 #[derive(Clone, Debug)]
@@ -324,49 +324,56 @@ fn split_github_sections(text: &str) -> Result<GithubSections> {
 /// - SSH: `git@github.com:owner/repo.git`
 /// - GitLab subdomains: `gitlab.example.com`, `gitlab.com`
 /// - Bitbucket: `bitbucket.org`, `bitbucket.com`
+///
+/// Extract the host portion from a URL's authority segment.
+///
+/// Handles HTTPS (`https://host/...`) and SSH (`git@host:path`) URLs,
+/// including those with port numbers (`git@host:22/path`).
+/// Returns `None` when the URL has no recognizable authority.
+fn extract_host(url: &str) -> Option<&str> {
+    let authority_start = if let Some(idx) = url.find("://") {
+        idx + 3
+    } else {
+        let idx = url.find('@')?;
+        idx + 1
+    };
+    let authority = &url[authority_start..];
+    let host_end = match (authority.find('/'), authority.find(':')) {
+        (Some(s), Some(c)) => s.min(c),
+        (Some(s), None) => s,
+        (None, Some(c)) => c,
+        (None, None) => authority.len(),
+    };
+    Some(&authority[..host_end])
+}
+
+/// Check whether a URL's host matches an exact host string.
+fn starts_with_host(url: &str, host: &str) -> bool {
+    extract_host(url).is_some_and(|h| h == host)
+}
+
+/// Check whether a URL's host starts with a prefix.
+/// Used for matching GitLab subdomains like `gitlab.example.com`.
+fn host_starts_with(url: &str, prefix: &str) -> bool {
+    extract_host(url).is_some_and(|h| h.starts_with(prefix))
+}
+
 fn detect_platform_from_url(url: &str) -> Option<Platform> {
     let lower = url.to_ascii_lowercase();
 
-    // SSH URLs: git@github.com:owner/repo.git
-    if lower.starts_with("git@github.com:") || lower.starts_with("git@github.com/") {
-        return Some(Platform::GitHub);
-    }
-
-    // HTTPS URLs
-    if lower.starts_with("https://github.com/") {
+    // SSH URLs: git@github.com:owner/repo.git (port `:` is handled by
+    // starts_with_host which looks at the host before `:` or `/`).
+    if starts_with_host(&lower, "github.com") {
         return Some(Platform::GitHub);
     }
 
     // GitLab: gitlab.com or gitlab.* subdomains (e.g., gitlab.example.com)
-    // SSH: git@gitlab.example.com:owner/repo.git
-    // SSH: git@gitlab.com:owner/repo.git
-    if lower.starts_with("git@gitlab") {
-        return Some(Platform::GitLab);
-    }
-    if lower.starts_with("https://gitlab") {
+    if starts_with_host(&lower, "gitlab.com") || host_starts_with(&lower, "gitlab.") {
         return Some(Platform::GitLab);
     }
 
     // Bitbucket: bitbucket.org, bitbucket.com
-    if lower.starts_with("git@bitbucket") {
-        return Some(Platform::Bitbucket);
-    }
-    if lower.starts_with("https://bitbucket") {
-        return Some(Platform::Bitbucket);
-    }
-
-    // Also check domain-based patterns in any part of the URL
-    // (handles URLs with port numbers, paths, or query strings)
-    if lower.contains(".github.com") || lower.contains("github.com") {
-        return Some(Platform::GitHub);
-    }
-    if lower.contains(".gitlab.") || lower.contains("gitlab.com") {
-        return Some(Platform::GitLab);
-    }
-    if lower.contains(".bitbucket.")
-        || lower.contains("bitbucket.org")
-        || lower.contains("bitbucket.com")
-    {
+    if starts_with_host(&lower, "bitbucket.org") || starts_with_host(&lower, "bitbucket.com") {
         return Some(Platform::Bitbucket);
     }
 
@@ -581,6 +588,64 @@ mod tests {
         assert_eq!(
             detect_platform_from_url("GIT@GITHUB.COM:owner/repo.git"),
             Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_github_ssh_with_port() {
+        assert_eq!(
+            detect_platform_from_url("git@github.com:22/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("git@github.com:2222/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_ssh_with_port() {
+        assert_eq!(
+            detect_platform_from_url("git@gitlab.com:22/owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_no_false_positive_custom_gitlab_url() {
+        // A private GitLab instance that is NOT gitlab.com or a gitlab.* domain
+        // should not be falsely detected as GitLab.
+        assert_eq!(
+            detect_platform_from_url("https://my-gitlab-service.internal/owner/repo.git"),
+            None
+        );
+        assert_eq!(
+            detect_platform_from_url("git@gitlab-service.internal:owner/repo.git"),
+            None
+        );
+    }
+
+    #[test]
+    fn detect_platform_no_false_positive_custom_bitbucket_url() {
+        assert_eq!(
+            detect_platform_from_url("https://my-bitbucket.internal/owner/repo.git"),
+            None
+        );
+    }
+
+    #[test]
+    fn detect_platform_github_https_with_port() {
+        assert_eq!(
+            detect_platform_from_url("https://github.com:443/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_bitbucket_ssh_with_port() {
+        assert_eq!(
+            detect_platform_from_url("git@bitbucket.org:22/owner/repo.git"),
+            Some(Platform::Bitbucket)
         );
     }
 
