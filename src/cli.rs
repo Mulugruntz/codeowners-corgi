@@ -11,7 +11,7 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Clone, Copy, Debug, Subcommand)]
+#[derive(Clone, Debug, Subcommand)]
 pub enum Command {
     /// Reconcile package CODEOWNERS manifests with the repository state.
     Sync {
@@ -19,11 +19,18 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Rebuild the generated aggregate section in .github/CODEOWNERS.
+    /// Rebuild the generated aggregate section in the platform's default CODEOWNERS file.
+    ///
+    /// Defaults to `.github/CODEOWNERS` for GitHub, `.gitlab/CODEOWNERS` for
+    /// GitLab, and `.bitbucket/CODEOWNERS` for Bitbucket, based on the remote
+    /// URL. Use `--output` to override.
     Aggregate {
         /// Perform a dry run without writing any files.
         #[arg(long)]
         dry_run: bool,
+        /// Write the aggregate to a specific path instead of the default.
+        #[arg(long)]
+        output: Option<String>,
     },
     /// Migrate conventional CODEOWNERS manifests into exhaustive CORGI manifests.
     Migrate {

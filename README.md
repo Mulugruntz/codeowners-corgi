@@ -14,7 +14,7 @@ CORGI (**Co**de**O**wners **R**econciler for **G**it **I**ntegrity) is an opinio
 
 Instead of relying on broad wildcard rules as the final source of truth, CORGI reconciles ownership against the repository itself: adding new files, removing deleted ones, preserving ownership across renames where appropriate, respecting nested package boundaries and Git ignore rules, and reporting files that still need an owner.
 
-It can also aggregate package-level manifests into the repository-wide `.github/CODEOWNERS` file GitHub reads.
+It can also aggregate package-level manifests into the repository-wide `CODEOWNERS` file each platform reads.
 
 ```mermaid
 flowchart TD
@@ -31,7 +31,7 @@ flowchart TD
     F --> G
 
     G --> H["<code>corgi aggregate</code>"]
-    H --> I["<code>.github/CODEOWNERS</code>"]
+    H --> I["<code>.github/CODEOWNERS</code> / <code>.gitlab/CODEOWNERS</code> / <code>.bitbucket/CODEOWNERS</code>"]
 ```
 
 ### The model
@@ -41,7 +41,7 @@ flowchart TD
 * Nested package roots take ownership away from ancestor package roots.
 * `# Rule[auto-assign]: ...` rules assign owners to new files without overwriting existing explicit ownership.
 * `corgi sync` reconciles package manifests with Git-aware repository state.
-* `corgi aggregate` builds the repository-wide generated section in `.github/CODEOWNERS`.
+* `corgi aggregate` builds the repository-wide generated section in the platform's default `CODEOWNERS` location (`.github/`, `.gitlab/`, or `.bitbucket/`).
 * `corgi migrate` converts conventional wildcard-based manifests into CORGI's exhaustive format.
 
 ## Commands
@@ -60,17 +60,17 @@ Each command accepts `--dry-run` to preview what would change without writing an
 - Every managed non-ignored file in a package gets one explicit entry.
 - Nested package roots take ownership away from ancestor package roots.
 - `# Rule[auto-assign]: ...` comments are auto-assignment rules for new files only.
-- `.github/CODEOWNERS` keeps its local `.github` ownership outside the generated section and stores the repository-wide aggregate inside the generated section.
-- When `.github/CODEOWNERS` is the only manifest (no root `/CODEOWNERS`), its local section is promoted to cover the entire repository so every file remains owned by the file GitHub actually reads.
+- Platform `CODEOWNERS` files keep their local ownership outside the generated section and store the repository-wide aggregate inside the generated section.
+- When a platform `CODEOWNERS` is the only manifest (no root `/CODEOWNERS`), its local section is promoted to cover the entire repository so every file remains owned by the file the platform actually reads.
 
 ## Workflow
 
 1. Run `corgi sync` to reconcile package manifests with Git-aware file state.
-2. Run `corgi aggregate` to rebuild the generated aggregate in `.github/CODEOWNERS`.
+2. Run `corgi aggregate` to rebuild the generated aggregate in the platform's default `CODEOWNERS` file.
 3. Run `corgi migrate` once to convert conventional wildcard manifests into CORGI's exhaustive format.
 
 `corgi sync` returns `1` when it updates a manifest or when at least one file remains unowned.
-`corgi aggregate` returns `1` when it updates `.github/CODEOWNERS`.
+`corgi aggregate` returns `1` when it updates the platform's default `CODEOWNERS` file.
 
 ## Auto-assignment rules
 
@@ -95,9 +95,18 @@ CORGI uses the `ignore` crate's WalkBuilder to discover files. This means:
   The file will be excluded from CORGI's output. This is a known limitation of the
   filesystem-walker approach.
 
-## `.github/CODEOWNERS`
+## Platform `CODEOWNERS` files
 
-Use a local section plus generated section markers:
+Each platform reads its `CODEOWNERS` from a different location:
+
+- **GitHub**: `.github/CODEOWNERS`
+- **GitLab**: `.gitlab/CODEOWNERS`
+- **Bitbucket**: `.bitbucket/CODEOWNERS`
+
+### GitHub
+
+GitHub `CODEOWNERS` files support a **local section** (your manual rules) followed
+by a **generated section** wrapped in CORGI markers:
 
 ```text
 # Local .github ownership/rules:
@@ -108,9 +117,16 @@ Use a local section plus generated section markers:
 # END CORGI GENERATED
 ```
 
-`corgi sync` only reconciles the local `.github` section.
+`corgi sync` only reconciles the local section.
 `corgi aggregate` only rebuilds the generated section and ignores the previous generated contents as input.
 When the aggregate would be empty, `corgi aggregate` omits the generated section entirely.
+
+### GitLab and Bitbucket
+
+GitLab and Bitbucket use a single CODEOWNERS file without generated-section markers.
+`corgi aggregate` writes the generated body directly to the platform path, which
+replaces any existing content. Use `--output` if you need to merge with an existing
+manifest.
 
 ## Architecture
 
@@ -160,7 +176,7 @@ The table below shows whether **CORGI can safely manage each feature when used w
 | Feature                                          | GitHub | GitLab | Bitbucket |
 |--------------------------------------------------|:------:|:------:|:---------:|
 | **Repository integration**                       |        |        |           |
-| Native repository-wide `CODEOWNERS` output       |   ✅   |  ❌¹   |    ❌²    |
+| Native repository-wide `CODEOWNERS` output       |   ✅   |   ✅   |    ✅     |
 | Provider `CODEOWNERS` discovery / fallback rules |   ✅   |  ❌¹   |    ❌²    |
 | **Core syntax**                                  |        |        |           |
 | Full-line comments — `# comment`                 |   ✅   |   ✅   |    ✅     |
@@ -192,9 +208,9 @@ The table below shows whether **CORGI can safely manage each feature when used w
 | **CORGI extensions**                             |        |        |           |
 | Auto-assignment — `# Rule[auto-assign]: ...`     |   ✅   |   ✅   |    ✅     |
 
-¹ CORGI currently generates the repository-wide manifest at `.github/CODEOWNERS`. GitLab does not read that location: it searches `/CODEOWNERS`, `docs/CODEOWNERS`, then `.gitlab/CODEOWNERS`. Additionally, a root `/CODEOWNERS` used as a CORGI package manifest would take precedence over `.gitlab/CODEOWNERS`, so GitLab aggregation requires more than changing the output filename.
+¹ GitLab searches `/CODEOWNERS`, `docs/CODEOWNERS`, then `.gitlab/CODEOWNERS`. Additionally, a root `/CODEOWNERS` used as a CORGI package manifest would take precedence over `.gitlab/CODEOWNERS`, so GitLab aggregation requires careful placement of package manifests.
 
-² Bitbucket only reads `.bitbucket/CODEOWNERS`. CORGI does not currently generate its repository-wide aggregate there.
+² Bitbucket only reads `.bitbucket/CODEOWNERS`, which CORGI generates by default when it detects a Bitbucket remote.
 
 ³ GitHub and Bitbucket support inline comments, but CORGI does not preserve them when rewriting a manifest. Use full-line comments in CORGI-managed files.
 
@@ -204,9 +220,11 @@ The table below shows whether **CORGI can safely manage each feature when used w
 
 ### Provider support
 
-Today, CORGI's repository-wide aggregation workflow is designed for **GitHub**.
+CORGI's repository-wide aggregation workflow supports **GitHub**, **GitLab**, and **Bitbucket**.
 
-Most of the common `CODEOWNERS` syntax is also compatible with GitLab and Bitbucket, and provider-specific owner references are generally preserved. Full first-class support for those providers would additionally require provider-aware output locations and, for GitLab, support for its extended rule semantics.
+CORGI inspects the repository's Git remotes and selects the appropriate output location (`.github/CODEOWNERS`, `.gitlab/CODEOWNERS`, or `.bitbucket/CODEOWNERS`). Use `--output` to override the default for repositories with mixed providers.
+
+Most of the common `CODEOWNERS` syntax is also compatible with all three providers, and provider-specific owner references are generally preserved. For GitLab, full first-class support additionally requires support for its extended rule semantics.
 
 ## Development
 

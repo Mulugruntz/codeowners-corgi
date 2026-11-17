@@ -21,7 +21,7 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
 
     for package in &packages {
         let raw_text = repo.read_text(&package.manifest_path)?;
-        let (local_text, generated, suffix) = if package.is_github {
+        let (local_text, generated, suffix) = if package.uses_generated_sections() {
             let sections = repo.split_github_sections(&raw_text)?;
             (sections.prefix, sections.generated, sections.suffix)
         } else {
@@ -82,7 +82,7 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         };
         next_manifest.sort_items();
         let rendered_local = next_manifest.render();
-        let rendered = if package.is_github {
+        let rendered = if package.uses_generated_sections() {
             combine_github_sections(&rendered_local, generated.as_deref(), &suffix)
         } else {
             rendered_local

@@ -203,6 +203,21 @@ fn sync_stderr_unowned_summary() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// --output flag acceptance
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn aggregate_output_flag_parsed() {
+    let repo = init_repo();
+    write(repo.path(), "CODEOWNERS", "");
+    write(repo.path(), "README.md", "readme");
+    // --output must not cause a parse error. Exit code reflects repo state,
+    // not flag parsing.
+    run_corgi_args(repo.path(), &["aggregate", "--output", "custom/CODEOWNERS"])
+        .stderr(predicate::str::contains("error").not());
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // --dry-run flag acceptance
 // ═══════════════════════════════════════════════════════════════════
 

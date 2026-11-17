@@ -1,4 +1,6 @@
 # Rule[auto-assign]: / @Mulugruntz
+
+# BEGIN CORGI GENERATED
 /.github/CODEOWNERS @Mulugruntz
 /.github/workflows/rust-lint-and-format.yaml @Mulugruntz
 /.github/workflows/rust-tests.yaml @Mulugruntz
@@ -25,3 +27,4 @@
 /src/cli.rs @Mulugruntz
 /src/main.rs @Mulugruntz
 /tests/cli.rs @Mulugruntz
+# END CORGI GENERATED

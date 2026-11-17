@@ -3,6 +3,84 @@ mod support;
 use indoc::indoc;
 use support::TestRepo;
 
+use corgi_core::{Platform, RepoContext};
+
+// ═══════════════════════════════════════════════════════════════════
+// RepoContext::detect_platform() — integration tests
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn detect_platform_github_https() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://github.com/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitHub);
+}
+
+#[test]
+fn detect_platform_github_ssh() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "git@github.com:owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitHub);
+}
+
+#[test]
+fn detect_platform_gitlab_com() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://gitlab.com/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitLab);
+}
+
+#[test]
+fn detect_platform_gitlab_subdomain() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://gitlab.example.com/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitLab);
+}
+
+#[test]
+fn detect_platform_bitbucket_org() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://bitbucket.org/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::Bitbucket);
+}
+
+#[test]
+fn detect_platform_fallback_to_github() {
+    let repo = TestRepo::new();
+    // No remote configured → should fall back to GitHub.
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitHub);
+}
+
+#[test]
+fn detect_platform_unknown_remote_fallback() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://self-hosted.example.com/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitHub);
+}
+
+#[test]
+fn detect_platform_first_remote_wins() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://github.com/owner/repo.git");
+    repo.git_remote("upstream", "https://gitlab.com/owner/repo.git");
+
+    let ctx = RepoContext::discover(repo.path(), false).unwrap();
+    assert_eq!(ctx.detect_platform(), Platform::GitHub);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // sync — basic operations
 // ═══════════════════════════════════════════════════════════════════
@@ -486,7 +564,7 @@ fn aggregate_no_existing_generated_section() {
     );
     repo.write(".github/ci.yml", "ci");
 
-    let status = corgi_core::aggregate(repo.path(), false).unwrap();
+    let status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
     assert_eq!(status, 1);
 
     let content = repo.read(".github/CODEOWNERS");
@@ -511,7 +589,7 @@ fn aggregate_replaces_existing_generated_section() {
         "},
     );
 
-    corgi_core::aggregate(repo.path(), false).unwrap();
+    corgi_core::aggregate(repo.path(), false, None, None).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(
@@ -537,7 +615,7 @@ fn aggregate_preserves_prefix() {
     );
     repo.write(".github/ci.yml", "ci");
 
-    corgi_core::aggregate(repo.path(), false).unwrap();
+    corgi_core::aggregate(repo.path(), false, None, None).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(content.contains("# Important local rules"));
@@ -554,7 +632,7 @@ fn aggregate_preserves_suffix() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n# suffix comment\n",
     );
 
-    corgi_core::aggregate(repo.path(), false).unwrap();
+    corgi_core::aggregate(repo.path(), false, None, None).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(content.contains("# suffix comment"));
@@ -570,10 +648,10 @@ fn aggregate_is_idempotent() {
         "# Local\n# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    corgi_core::aggregate(repo.path(), false).unwrap();
+    corgi_core::aggregate(repo.path(), false, None, None).unwrap();
     let snapshot = repo.read(".github/CODEOWNERS");
 
-    let status = corgi_core::aggregate(repo.path(), false).unwrap();
+    let status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
     assert_eq!(status, 0);
     assert_eq!(repo.read(".github/CODEOWNERS"), snapshot);
 }
@@ -589,7 +667,7 @@ fn aggregate_deterministic_ordering() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    corgi_core::aggregate(repo.path(), false).unwrap();
+    corgi_core::aggregate(repo.path(), false, None, None).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     let a_pos = content.find("/a.txt").expect("/a.txt");
@@ -604,7 +682,7 @@ fn aggregate_malformed_markers_returns_error() {
     repo.write("file", "content");
     repo.write(".github/CODEOWNERS", "# BEGIN CORGI GENERATED\n");
 
-    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false, None, None).unwrap_err();
     assert!(err.to_string().contains("missing"), "got: {err}");
 }
 
@@ -731,7 +809,7 @@ fn aggregate_returns_zero_with_no_packages() {
     repo.write("README.md", "readme");
     // With no CODEOWNERS at all and no .github/CODEOWNERS, aggregate may
     // create an empty file. Verify it does not panic.
-    let _status = corgi_core::aggregate(repo.path(), false).unwrap();
+    let _status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
 }
 
 #[test]
@@ -831,7 +909,7 @@ fn aggregate_rejects_negation_pattern_in_package() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false, None, None).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("negation"), "got: {msg}");
 }
@@ -1024,7 +1102,7 @@ fn aggregate_atomicity_malformed_markers_leaves_file_unchanged() {
 
     let before = repo.read_bytes(".github/CODEOWNERS");
 
-    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false, None, None).unwrap_err();
     assert!(err.to_string().contains("missing"));
 
     assert_eq!(
@@ -1247,7 +1325,7 @@ fn aggregate_dry_run_no_write() {
     repo.write("README.md", "readme");
     repo.write("src/main.rs", "");
 
-    let _status = corgi_core::aggregate(repo.path(), true).unwrap();
+    let _status = corgi_core::aggregate(repo.path(), true, None, None).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(
@@ -1263,14 +1341,14 @@ fn aggregate_dry_run_exit_code_matches_real_run() {
     repo_a.write("README.md", "readme");
     repo_a.write("src/main.rs", "");
 
-    let status_dry = corgi_core::aggregate(repo_a.path(), true).unwrap();
+    let status_dry = corgi_core::aggregate(repo_a.path(), true, None, None).unwrap();
 
     let repo_b = TestRepo::new();
     repo_b.write("CODEOWNERS", "# header\n");
     repo_b.write("README.md", "readme");
     repo_b.write("src/main.rs", "");
 
-    let status_real = corgi_core::aggregate(repo_b.path(), false).unwrap();
+    let status_real = corgi_core::aggregate(repo_b.path(), false, None, None).unwrap();
 
     assert_eq!(status_dry, status_real);
 }
@@ -1298,13 +1376,181 @@ fn migrate_dry_run_no_write() {
 fn migrate_dry_run_exit_code_matches_real_run() {
     let repo_a = TestRepo::new();
     repo_a.write("src/CODEOWNERS", "/src/** @team-a\n*.rs @team-b\n");
+    repo_a.write("README.md", "readme");
 
     let status_dry = corgi_core::migrate(repo_a.path(), true).unwrap();
 
     let repo_b = TestRepo::new();
     repo_b.write("src/CODEOWNERS", "/src/** @team-a\n*.rs @team-b\n");
+    repo_b.write("README.md", "readme");
 
     let status_real = corgi_core::migrate(repo_b.path(), false).unwrap();
 
     assert_eq!(status_dry, status_real);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// aggregate — default path from platform autodetection
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn aggregate_defaults_to_github_path() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
+
+    assert_eq!(status, 1);
+    assert!(repo.path().join(".github/CODEOWNERS").exists());
+    assert!(
+        !repo.path().join(".gitlab/CODEOWNERS").exists(),
+        "must not write to non-GitHub paths when no GitLab remote"
+    );
+}
+
+#[test]
+fn aggregate_defaults_to_gitlab_when_gitlab_remote() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://gitlab.com/owner/repo.git");
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read(".gitlab/CODEOWNERS");
+    assert!(content.contains("/README.md @org/root"));
+    assert!(
+        !repo.path().join(".github/CODEOWNERS").exists(),
+        "must not write to .github/CODEOWNERS when GitLab remote"
+    );
+}
+
+#[test]
+fn aggregate_defaults_to_bitbucket_when_bitbucket_remote() {
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://bitbucket.org/owner/repo.git");
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read(".bitbucket/CODEOWNERS");
+    assert!(content.contains("/README.md @org/root"));
+}
+
+#[test]
+fn aggregate_skips_platform_dir_as_source_manifest() {
+    // Ensure that `.gitlab/CODEOWNERS` (or similar) is not treated as a
+    // source package manifest when aggregating to a different platform.
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://github.com/owner/repo.git");
+    // A stray GitLab manifest should be skipped during GitHub aggregate.
+    repo.write(".gitlab/CODEOWNERS", "/gitlab-only.txt @gitlab-team\n");
+    repo.write(".gitlab/only.txt", "only");
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let _status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
+
+    let content = repo.read(".github/CODEOWNERS");
+    assert!(
+        !content.contains("gitlab-only.txt"),
+        "GitLab manifest must be skipped as source input for GitHub aggregate"
+    );
+    assert!(content.contains("/README.md @org/root"));
+}
+
+#[test]
+fn aggregate_to_non_github_path_discards_existing_content() {
+    // Non-GitHub aggregate output writes generated body directly without
+    // prefix/suffix preservation, since GitLab and Bitbucket use a single
+    // CODEOWNERS file with no generated-section markers.
+    let repo = TestRepo::new();
+    repo.git_remote("origin", "https://gitlab.com/owner/repo.git");
+    repo.write(
+        ".gitlab/CODEOWNERS",
+        "# existing comment\n# existing content\n",
+    );
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let _status = corgi_core::aggregate(repo.path(), false, None, None).unwrap();
+
+    let content = repo.read(".gitlab/CODEOWNERS");
+    assert!(
+        content.contains("/README.md @org/root"),
+        "should contain generated content: {content}"
+    );
+    assert!(
+        !content.contains("existing comment"),
+        "non-GitHub aggregate writes generated body directly; existing content is replaced"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// aggregate — custom output path
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn aggregate_custom_output_path() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let status =
+        corgi_core::aggregate(repo.path(), false, Some(".gitlab/CODEOWNERS"), None).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read(".gitlab/CODEOWNERS");
+    assert!(content.contains("/README.md @org/root"));
+    assert!(!repo.path().join(".github/CODEOWNERS").exists());
+}
+
+#[test]
+fn aggregate_custom_output_creates_parent_directory() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    let status =
+        corgi_core::aggregate(repo.path(), false, Some("custom/.corgi/CODEOWNERS"), None).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read("custom/.corgi/CODEOWNERS");
+    assert!(content.contains("/README.md @org/root"));
+}
+
+#[test]
+fn aggregate_custom_output_dry_run_no_write() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "# header\n");
+    repo.write("README.md", "readme");
+
+    let status =
+        corgi_core::aggregate(repo.path(), true, Some(".gitlab/CODEOWNERS"), None).unwrap();
+
+    assert_eq!(status, 1);
+    assert!(
+        !repo.path().join(".gitlab/CODEOWNERS").exists(),
+        "dry-run must not write the custom output path"
+    );
+}
+
+#[test]
+fn aggregate_custom_output_is_idempotent() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "/README.md @org/root\n");
+    repo.write("README.md", "readme");
+
+    corgi_core::aggregate(repo.path(), false, Some(".gitlab/CODEOWNERS"), None).unwrap();
+    let first = repo.read(".gitlab/CODEOWNERS");
+
+    let status =
+        corgi_core::aggregate(repo.path(), false, Some(".gitlab/CODEOWNERS"), None).unwrap();
+
+    assert_eq!(status, 0);
+    assert_eq!(repo.read(".gitlab/CODEOWNERS"), first);
 }
