@@ -16,7 +16,7 @@ mod sync;
 use std::path::Path;
 
 pub use error::{CorgiError, Result};
-pub use repo::Platform;
+pub use repo::{Platform, RepoContext};
 
 /// Reconcile package CODEOWNERS manifests with the repository state.
 ///
@@ -27,10 +27,15 @@ pub fn sync(start: &Path, dry_run: bool) -> Result<i32> {
     sync::run(&repo)
 }
 
-/// Rebuild the generated aggregate section in `.github/CODEOWNERS`.
+/// Rebuild the generated aggregate section in the platform's default
+/// `CODEOWNERS` file (`.github/`, `.gitlab/`, or `.bitbucket/`).
 ///
 /// When `output_path` is `Some`, write the aggregate to the specified path
-/// instead of the default `.github/CODEOWNERS`.
+/// instead of the autodetected platform default.
+///
+/// For GitHub, the generated body is merged with any existing local section
+/// and suffix. For GitLab and Bitbucket the generated body is written
+/// directly, replacing existing file content.
 ///
 /// When `dry_run` is `true`, no files are written. The returned status code
 /// matches the code that would be returned by an actual run.

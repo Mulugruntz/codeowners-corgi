@@ -61,6 +61,11 @@ impl TestRepo {
         }
         self.git(["mv", from, to]);
     }
+
+    /// Add a git remote with the given name and URL.
+    pub fn git_remote(&self, name: &str, url: &str) {
+        self.git(["remote", "add", name, url]);
+    }
 }
 
 fn git<I, S>(repo: &Path, args: I)

@@ -103,7 +103,10 @@ Each platform reads its `CODEOWNERS` from a different location:
 - **GitLab**: `.gitlab/CODEOWNERS`
 - **Bitbucket**: `.bitbucket/CODEOWNERS`
 
-Use a local section plus generated section markers:
+### GitHub
+
+GitHub `CODEOWNERS` files support a **local section** (your manual rules) followed
+by a **generated section** wrapped in CORGI markers:
 
 ```text
 # Local .github ownership/rules:
@@ -117,6 +120,13 @@ Use a local section plus generated section markers:
 `corgi sync` only reconciles the local section.
 `corgi aggregate` only rebuilds the generated section and ignores the previous generated contents as input.
 When the aggregate would be empty, `corgi aggregate` omits the generated section entirely.
+
+### GitLab and Bitbucket
+
+GitLab and Bitbucket use a single CODEOWNERS file without generated-section markers.
+`corgi aggregate` writes the generated body directly to the platform path, which
+replaces any existing content. Use `--output` if you need to merge with an existing
+manifest.
 
 ## Architecture
 
