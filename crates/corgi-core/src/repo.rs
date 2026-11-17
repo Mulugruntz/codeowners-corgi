@@ -322,18 +322,31 @@ fn split_github_sections(text: &str) -> Result<GithubSections> {
 /// Supports common URL formats:
 /// - HTTPS: `https://github.com/owner/repo.git`
 /// - SSH: `git@github.com:owner/repo.git`
-/// - GitLab subdomains: `gitlab.example.com`, `gitlab.com`
+/// - SSH with scheme: `ssh://git@github.com/owner/repo.git`
+/// - GitLab subdomains: `gitlab.com` or `gitlab.*` subdomains
+///   (e.g., `gitlab.example.com`). URLs like `my-gitlab.internal` or
+///   `*-gitlab.*` are **not** matched — the domain must be `gitlab.com`
+///   or a subdomain of `gitlab.com`.
 /// - Bitbucket: `bitbucket.org`, `bitbucket.com`
 ///
 /// Extract the host portion from a URL's authority segment.
 ///
-/// Handles HTTPS (`https://host/...`) and SSH (`git@host:path`) URLs,
+/// Handles HTTPS (`https://host/...`), SSH SCP-style
+/// (`git@host:path`), and SSH URI-style (`ssh://git@host/path`) URLs,
 /// including those with port numbers (`git@host:22/path`).
+/// Strips userinfo (`user@`) from URI-style URLs.
 /// Returns `None` when the URL has no recognizable authority.
 fn extract_host(url: &str) -> Option<&str> {
     let authority_start = if let Some(idx) = url.find("://") {
-        idx + 3
+        let mut pos = idx + 3;
+        // URI-style URLs may include userinfo (e.g. `ssh://git@github.com/...`).
+        // Skip past the `@` to get to the actual host.
+        if let Some(at) = url[pos..].find('@') {
+            pos += at + 1;
+        }
+        pos
     } else {
+        // SCP-style SSH: `git@host:path` — skip past `@` to the host.
         let idx = url.find('@')?;
         idx + 1
     };
@@ -600,6 +613,42 @@ mod tests {
         assert_eq!(
             detect_platform_from_url("git@github.com:2222/owner/repo.git"),
             Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_github_ssh_scheme() {
+        assert_eq!(
+            detect_platform_from_url("ssh://git@github.com/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("ssh://git@github.com:22/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("SSH://GIT@GITHUB.COM/OWNER/REPO.GIT"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_ssh_scheme() {
+        assert_eq!(
+            detect_platform_from_url("ssh://git@gitlab.com/owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+        assert_eq!(
+            detect_platform_from_url("ssh://git@gitlab.example.com/owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_bitbucket_ssh_scheme() {
+        assert_eq!(
+            detect_platform_from_url("ssh://git@bitbucket.org/owner/repo.git"),
+            Some(Platform::Bitbucket)
         );
     }
 

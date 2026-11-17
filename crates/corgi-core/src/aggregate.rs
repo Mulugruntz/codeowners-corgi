@@ -5,12 +5,15 @@ use crate::{
     error::{CorgiError, Result},
     git::repo_relative_string,
     repo::{
-        GENERATED_BEGIN, GENERATED_END, GITHUB_CODEOWNERS, RepoContext,
-        repo_relative_from_manifest_path,
+        GENERATED_BEGIN, GENERATED_END, Platform, RepoContext, repo_relative_from_manifest_path,
     },
 };
 
-pub fn run(repo: &RepoContext, output_path: Option<&str>) -> Result<i32> {
+pub fn run(
+    repo: &RepoContext,
+    output_path: Option<&str>,
+    platform: Option<Platform>,
+) -> Result<i32> {
     let packages = repo.package_roots()?;
     let mut generated_entries = Vec::new();
 
@@ -50,10 +53,16 @@ pub fn run(repo: &RepoContext, output_path: Option<&str>) -> Result<i32> {
         )
     });
 
-    let output_path =
-        output_path.unwrap_or_else(|| repo.detect_platform().default_codeowners_path());
+    // Resolve the platform: use the caller-supplied value, fall back to
+    // auto-detection when the CLI did not pass an explicit platform.
+    let platform = platform.unwrap_or_else(|| repo.detect_platform());
+
+    let output_path = output_path.unwrap_or_else(|| platform.default_codeowners_path());
     let output = Utf8Path::new(output_path);
-    let content = if output.as_str() == GITHUB_CODEOWNERS {
+
+    // Merge semantics are tied to the *platform*, not the output path.
+    // GitHub uses prefix/suffix merging; other platforms overwrite directly.
+    let content = if platform == Platform::GitHub {
         let existing = match repo.read_text(output) {
             Ok(text) => text,
             Err(CorgiError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
