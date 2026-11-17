@@ -13,7 +13,7 @@ fn sync_adds_new_files() {
     repo.write("CODEOWNERS", "# header\n");
     repo.write("README.md", "readme");
 
-    let status = corgi_core::sync(repo.path()).unwrap();
+    let status = corgi_core::sync(repo.path(), false).unwrap();
 
     assert_eq!(status, 1);
     let content = repo.read("CODEOWNERS");
@@ -30,7 +30,7 @@ fn sync_removes_deleted_entries() {
     repo.write("CODEOWNERS", "/deleted.txt @old/team\n");
     repo.write("keep.txt", "keep");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(!content.contains("deleted.txt"));
@@ -43,7 +43,7 @@ fn sync_reports_unowned_files() {
     repo.write("CODEOWNERS", "");
     repo.write("keep.txt", "keep");
 
-    let status = corgi_core::sync(repo.path()).unwrap();
+    let status = corgi_core::sync(repo.path(), false).unwrap();
 
     assert_eq!(status, 1, "unowned files should produce status 1");
 }
@@ -54,7 +54,7 @@ fn sync_returns_zero_when_fully_owned_repo_is_unchanged() {
     repo.write("CODEOWNERS", "/CODEOWNERS @team\n/file.txt @team\n");
     repo.write("file.txt", "content");
 
-    let status = corgi_core::sync(repo.path()).unwrap();
+    let status = corgi_core::sync(repo.path(), false).unwrap();
 
     assert_eq!(status, 0, "fully owned unchanged repo should return 0");
     assert_eq!(
@@ -69,11 +69,11 @@ fn sync_is_byte_idempotent_after_full_ownership() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /** @team\n");
     repo.write("file.txt", "content");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
     let snapshot = repo.read("CODEOWNERS");
 
     // Second run should not modify the file.
-    let status = corgi_core::sync(repo.path()).unwrap();
+    let status = corgi_core::sync(repo.path(), false).unwrap();
     assert_eq!(repo.read("CODEOWNERS"), snapshot);
     // Still returns 0 because nothing changed and everything is owned.
     assert_eq!(status, 0);
@@ -85,11 +85,11 @@ fn sync_repeated_unresolved_preserves_status_one() {
     repo.write("CODEOWNERS", "");
     repo.write("file.txt", "content");
 
-    let status1 = corgi_core::sync(repo.path()).unwrap();
+    let status1 = corgi_core::sync(repo.path(), false).unwrap();
     assert_eq!(status1, 1);
     let snapshot = repo.read("CODEOWNERS");
 
-    let status2 = corgi_core::sync(repo.path()).unwrap();
+    let status2 = corgi_core::sync(repo.path(), false).unwrap();
     assert_eq!(status2, 1, "unresolved state should still return 1");
     assert_eq!(
         repo.read("CODEOWNERS"),
@@ -108,7 +108,7 @@ fn sync_auto_assign_rule_match() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /src/** @org/backend\n");
     repo.write("src/lib.rs", "lib");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/lib.rs @org/backend"));
@@ -127,7 +127,7 @@ fn sync_most_specific_rule_wins() {
     repo.write("src/main.rs", "main");
     repo.write("src/special/feature.rs", "feature");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/main.rs @org/root"));
@@ -146,7 +146,7 @@ fn sync_does_not_overwrite_existing_owner() {
     );
     repo.write("src/existing.rs", "existing");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/existing.rs @org/manual"));
@@ -164,7 +164,7 @@ fn sync_preserves_owner_on_rename_within_package() {
     repo.commit("initial");
     repo.rename("old.txt", "new.txt");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/new.txt @org/team"));
@@ -186,7 +186,7 @@ fn nested_package_takes_ownership_from_ancestor() {
     );
     repo.write("packages/api/src/main.rs", "fn main() {}");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(root_co.contains("/src/lib.rs @org/root"));
@@ -210,7 +210,7 @@ fn file_at_package_root_boundary() {
     repo.write("packages/api/README.md", "api readme");
     repo.write("README.md", "root readme");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(root_co.contains("/README.md @org/root"));
@@ -236,7 +236,7 @@ fn sibling_packages_independent_ownership() {
     repo.write("packages/beta/lib.rs", "beta");
     repo.write("root.rs", "root");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(root_co.contains("/root.rs @org/root"));
@@ -262,7 +262,7 @@ fn sync_respects_root_gitignore() {
     repo.write("kept.txt", "kept");
     repo.write("ignored.log", "ignored");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/kept.txt"));
@@ -277,7 +277,7 @@ fn sync_respects_nested_gitignore() {
     repo.write("src/nested/keep.rs", "keep");
     repo.write("src/nested/temp.tmp", "temp");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/nested/keep.rs"));
@@ -293,7 +293,7 @@ fn sync_respects_git_info_exclude() {
     // .git/info/exclude is repo-local and should be honored.
     repo.write(".git/info/exclude", "excluded.tmp\n");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/kept.txt"));
@@ -310,7 +310,7 @@ fn sync_handles_hidden_files() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /** @team\n");
     repo.write(".hidden", "hidden");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/.hidden @team"));
@@ -322,7 +322,7 @@ fn sync_handles_spaces_in_paths() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /** @team\n");
     repo.write("my file.txt", "content");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains(r"/my\ file.txt @team"));
@@ -334,7 +334,7 @@ fn sync_handles_unicode_paths() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /src/** @team\n");
     repo.write("src/über file.rs", "fn main() {}\n");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains(r"/src/über\ file.rs @team"));
@@ -346,7 +346,7 @@ fn sync_handles_deeply_nested_files() {
     repo.write("CODEOWNERS", "# Rule[auto-assign]: /** @team\n");
     repo.write("a/b/c/d/e/f.txt", "deep");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/a/b/c/d/e/f.txt @team"));
@@ -372,7 +372,7 @@ fn sync_updates_local_github_section_without_reaggregating() {
     );
     repo.write(".github/workflows/ci.yml", "name: ci\n");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     // Local section is updated.
@@ -395,7 +395,7 @@ fn sync_treats_dotgithub_as_root_when_sole_manifest() {
     repo.write("README.md", "readme");
     repo.write("src/lib.rs", "lib");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(content.contains("/src/lib.rs @org/backend"));
@@ -412,7 +412,7 @@ fn sync_rejects_manifest_with_patterns() {
     repo.write("CODEOWNERS", "*.rs @team\n");
     repo.write("src/lib.rs", "lib");
 
-    let err = corgi_core::sync(repo.path()).unwrap_err();
+    let err = corgi_core::sync(repo.path(), false).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("wildcard"), "got: {msg}");
     assert!(msg.contains("migrate"), "got: {msg}");
@@ -437,7 +437,7 @@ fn migrate_converts_patterns_with_last_match_wins() {
     repo.write("src/lib.rs", "lib");
     repo.write("src/api.rs", "api");
 
-    let status = corgi_core::migrate(repo.path()).unwrap();
+    let status = corgi_core::migrate(repo.path(), false).unwrap();
     assert_eq!(status, 1);
 
     let content = repo.read("CODEOWNERS");
@@ -453,10 +453,10 @@ fn migrate_is_idempotent() {
     repo.write("CODEOWNERS", "*.md @org/docs\n");
     repo.write("README.md", "docs");
 
-    corgi_core::migrate(repo.path()).unwrap();
+    corgi_core::migrate(repo.path(), false).unwrap();
     let snapshot = repo.read("CODEOWNERS");
 
-    let status = corgi_core::migrate(repo.path()).unwrap();
+    let status = corgi_core::migrate(repo.path(), false).unwrap();
     assert_eq!(status, 0);
     assert_eq!(repo.read("CODEOWNERS"), snapshot);
 }
@@ -467,7 +467,7 @@ fn migrate_skips_manifest_without_patterns() {
     repo.write("CODEOWNERS", "/file.txt @team\n");
     repo.write("file.txt", "content");
 
-    let status = corgi_core::migrate(repo.path()).unwrap();
+    let status = corgi_core::migrate(repo.path(), false).unwrap();
     assert_eq!(status, 0);
 }
 
@@ -486,7 +486,7 @@ fn aggregate_no_existing_generated_section() {
     );
     repo.write(".github/ci.yml", "ci");
 
-    let status = corgi_core::aggregate(repo.path()).unwrap();
+    let status = corgi_core::aggregate(repo.path(), false).unwrap();
     assert_eq!(status, 1);
 
     let content = repo.read(".github/CODEOWNERS");
@@ -511,7 +511,7 @@ fn aggregate_replaces_existing_generated_section() {
         "},
     );
 
-    corgi_core::aggregate(repo.path()).unwrap();
+    corgi_core::aggregate(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(
@@ -537,7 +537,7 @@ fn aggregate_preserves_prefix() {
     );
     repo.write(".github/ci.yml", "ci");
 
-    corgi_core::aggregate(repo.path()).unwrap();
+    corgi_core::aggregate(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(content.contains("# Important local rules"));
@@ -554,7 +554,7 @@ fn aggregate_preserves_suffix() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n# suffix comment\n",
     );
 
-    corgi_core::aggregate(repo.path()).unwrap();
+    corgi_core::aggregate(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     assert!(content.contains("# suffix comment"));
@@ -570,10 +570,10 @@ fn aggregate_is_idempotent() {
         "# Local\n# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    corgi_core::aggregate(repo.path()).unwrap();
+    corgi_core::aggregate(repo.path(), false).unwrap();
     let snapshot = repo.read(".github/CODEOWNERS");
 
-    let status = corgi_core::aggregate(repo.path()).unwrap();
+    let status = corgi_core::aggregate(repo.path(), false).unwrap();
     assert_eq!(status, 0);
     assert_eq!(repo.read(".github/CODEOWNERS"), snapshot);
 }
@@ -589,7 +589,7 @@ fn aggregate_deterministic_ordering() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    corgi_core::aggregate(repo.path()).unwrap();
+    corgi_core::aggregate(repo.path(), false).unwrap();
 
     let content = repo.read(".github/CODEOWNERS");
     let a_pos = content.find("/a.txt").expect("/a.txt");
@@ -604,7 +604,7 @@ fn aggregate_malformed_markers_returns_error() {
     repo.write("file", "content");
     repo.write(".github/CODEOWNERS", "# BEGIN CORGI GENERATED\n");
 
-    let err = corgi_core::aggregate(repo.path()).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
     assert!(err.to_string().contains("missing"), "got: {err}");
 }
 
@@ -620,7 +620,7 @@ fn rename_inside_same_package_preserves_ownership() {
     repo.commit("initial");
     repo.rename("src/a.rs", "src/b.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/b.rs @org/team"));
@@ -646,7 +646,7 @@ fn rename_root_to_nested_package_uses_nested_ownership() {
     repo.commit("initial");
     repo.rename("src/foo.rs", "packages/api/src/foo.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     // The file is no longer in the root package.
@@ -670,7 +670,7 @@ fn rename_nested_to_root_package_uses_root_ownership() {
     repo.commit("initial");
     repo.rename("packages/api/src/lib.rs", "src/lib.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(root_co.contains("/src/lib.rs"));
@@ -697,7 +697,7 @@ fn rename_between_sibling_packages() {
     repo.commit("initial");
     repo.rename("packages/alpha/src/foo.rs", "packages/beta/src/foo.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let alpha_co = repo.read("packages/alpha/CODEOWNERS");
     assert!(
@@ -721,7 +721,7 @@ fn sync_returns_zero_with_no_codeowners() {
     let repo = TestRepo::new();
     repo.write("README.md", "readme");
 
-    let status = corgi_core::sync(repo.path()).unwrap();
+    let status = corgi_core::sync(repo.path(), false).unwrap();
     assert_eq!(status, 0);
 }
 
@@ -731,7 +731,7 @@ fn aggregate_returns_zero_with_no_packages() {
     repo.write("README.md", "readme");
     // With no CODEOWNERS at all and no .github/CODEOWNERS, aggregate may
     // create an empty file. Verify it does not panic.
-    let _status = corgi_core::aggregate(repo.path()).unwrap();
+    let _status = corgi_core::aggregate(repo.path(), false).unwrap();
 }
 
 #[test]
@@ -739,7 +739,7 @@ fn migrate_returns_zero_with_no_codeowners() {
     let repo = TestRepo::new();
     repo.write("README.md", "readme");
 
-    let status = corgi_core::migrate(repo.path()).unwrap();
+    let status = corgi_core::migrate(repo.path(), false).unwrap();
     assert_eq!(status, 0);
 }
 
@@ -766,7 +766,7 @@ fn three_level_nested_deepest_wins() {
     );
     repo.write("packages/api/internal/secret.txt", "secret");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(root_co.contains("/root.txt @org/root"));
@@ -801,7 +801,7 @@ fn sync_rejects_negation_pattern_in_manifest() {
     repo.write("CODEOWNERS", "!excluded @team\n");
     repo.write("file.txt", "content");
 
-    let err = corgi_core::sync(repo.path()).unwrap_err();
+    let err = corgi_core::sync(repo.path(), false).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("negation"), "got: {msg}");
     assert!(
@@ -816,7 +816,7 @@ fn migrate_rejects_negation_pattern() {
     repo.write("CODEOWNERS", "!excluded @team\n*.rs @org/rs\n");
     repo.write("src/lib.rs", "lib");
 
-    let err = corgi_core::migrate(repo.path()).unwrap_err();
+    let err = corgi_core::migrate(repo.path(), false).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("negation"), "got: {msg}");
 }
@@ -831,7 +831,7 @@ fn aggregate_rejects_negation_pattern_in_package() {
         "# BEGIN CORGI GENERATED\n# END CORGI GENERATED\n",
     );
 
-    let err = corgi_core::aggregate(repo.path()).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("negation"), "got: {msg}");
 }
@@ -844,7 +844,7 @@ fn migrate_character_range_pattern_accepted() {
     repo.write("src/b.rs", "b");
     repo.write("src/d.rs", "d");
 
-    corgi_core::migrate(repo.path()).unwrap();
+    corgi_core::migrate(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/src/a.rs @org/team"), "a matches [abc]");
@@ -876,7 +876,7 @@ fn cross_package_rename_root_to_nested_uses_destination_rules() {
     repo.commit("initial");
     repo.rename("src/moved.rs", "packages/api/src/moved.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let api_co = repo.read("packages/api/CODEOWNERS");
     // The destination package's rules must apply, NOT the source's explicit owner.
@@ -906,7 +906,7 @@ fn cross_package_rename_nested_to_root_uses_destination_rules() {
     repo.commit("initial");
     repo.rename("packages/api/src/lib.rs", "src/lib.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let root_co = repo.read("CODEOWNERS");
     assert!(
@@ -940,7 +940,7 @@ fn cross_package_rename_between_siblings_uses_destination_rules() {
     repo.commit("initial");
     repo.rename("packages/alpha/src/foo.rs", "packages/beta/src/foo.rs");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let beta_co = repo.read("packages/beta/CODEOWNERS");
     assert!(
@@ -971,7 +971,7 @@ fn sync_atomicity_parse_error_leaves_manifests_unchanged() {
     let root_before = repo.read_bytes("CODEOWNERS");
     let bad_before = repo.read_bytes("packages/bad/CODEOWNERS");
 
-    let err = corgi_core::sync(repo.path()).unwrap_err();
+    let err = corgi_core::sync(repo.path(), false).unwrap_err();
     assert!(err.to_string().contains("negation"));
 
     assert_eq!(
@@ -999,7 +999,7 @@ fn migrate_atomicity_parse_error_leaves_manifests_unchanged() {
     let root_before = repo.read_bytes("CODEOWNERS");
     let bad_before = repo.read_bytes("packages/bad/CODEOWNERS");
 
-    let err = corgi_core::migrate(repo.path()).unwrap_err();
+    let err = corgi_core::migrate(repo.path(), false).unwrap_err();
     assert!(err.to_string().contains("negation"));
 
     assert_eq!(
@@ -1024,7 +1024,7 @@ fn aggregate_atomicity_malformed_markers_leaves_file_unchanged() {
 
     let before = repo.read_bytes(".github/CODEOWNERS");
 
-    let err = corgi_core::aggregate(repo.path()).unwrap_err();
+    let err = corgi_core::aggregate(repo.path(), false).unwrap_err();
     assert!(err.to_string().contains("missing"));
 
     assert_eq!(
@@ -1058,7 +1058,7 @@ fn global_gitignore_does_not_affect_corgi() {
     let ignore_path = global_ignore.to_string_lossy().replace('\\', "/");
     repo.git(["config", "--local", "core.excludesFile", &ignore_path]);
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     // git_global(false) suppresses the global excludes file. If the
@@ -1088,7 +1088,7 @@ fn tracked_then_ignored_file_excluded_by_walker() {
     // Add .gitignore rule that would ignore .log files.
     repo.write(".gitignore", "*.log\n");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(
@@ -1126,7 +1126,7 @@ fn migrate_preserves_header_and_inter_rule_comments() {
     repo.write("src/lib.rs", "lib");
     repo.write("README.md", "readme");
 
-    corgi_core::migrate(repo.path()).unwrap();
+    corgi_core::migrate(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(
@@ -1163,7 +1163,7 @@ fn symlink_treated_as_tracked_path() {
     )
     .expect("create symlink");
 
-    corgi_core::sync(repo.path()).unwrap();
+    corgi_core::sync(repo.path(), false).unwrap();
 
     let content = repo.read("CODEOWNERS");
     assert!(content.contains("/real_file.txt @team"));
@@ -1187,7 +1187,7 @@ fn non_utf8_path_produces_understandable_error() {
     let bad_path = repo.path().join(bad_name);
     std::fs::write(&bad_path, "invalid utf8 name").expect("write non-utf8 file");
 
-    let result = corgi_core::sync(repo.path());
+    let result = corgi_core::sync(repo.path(), false);
     match result {
         Err(err) => {
             let msg = err.to_string();
@@ -1200,4 +1200,111 @@ fn non_utf8_path_produces_understandable_error() {
             // If the walker skips non-UTF-8 paths, sync may succeed.
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// dry-run — sync
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn sync_dry_run_no_write() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "# header\n");
+    repo.write("README.md", "readme");
+
+    let status = corgi_core::sync(repo.path(), true).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read("CODEOWNERS");
+    assert!(!content.contains("/README.md"), "dry-run must not write");
+}
+
+#[test]
+fn sync_dry_run_exit_code_matches_real_run() {
+    let repo_a = TestRepo::new();
+    repo_a.write("CODEOWNERS", "# header\n");
+    repo_a.write("README.md", "readme");
+
+    let status_dry = corgi_core::sync(repo_a.path(), true).unwrap();
+
+    let repo_b = TestRepo::new();
+    repo_b.write("CODEOWNERS", "# header\n");
+    repo_b.write("README.md", "readme");
+
+    let status_real = corgi_core::sync(repo_b.path(), false).unwrap();
+
+    assert_eq!(status_dry, status_real);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// dry-run — aggregate
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn aggregate_dry_run_no_write() {
+    let repo = TestRepo::new();
+    repo.write("CODEOWNERS", "# header\n");
+    repo.write("README.md", "readme");
+    repo.write("src/main.rs", "");
+
+    let _status = corgi_core::aggregate(repo.path(), true).unwrap();
+
+    let content = repo.read("CODEOWNERS");
+    assert!(
+        !content.contains("generated by corgi"),
+        "aggregate dry-run must not write"
+    );
+}
+
+#[test]
+fn aggregate_dry_run_exit_code_matches_real_run() {
+    let repo_a = TestRepo::new();
+    repo_a.write("CODEOWNERS", "# header\n");
+    repo_a.write("README.md", "readme");
+    repo_a.write("src/main.rs", "");
+
+    let status_dry = corgi_core::aggregate(repo_a.path(), true).unwrap();
+
+    let repo_b = TestRepo::new();
+    repo_b.write("CODEOWNERS", "# header\n");
+    repo_b.write("README.md", "readme");
+    repo_b.write("src/main.rs", "");
+
+    let status_real = corgi_core::aggregate(repo_b.path(), false).unwrap();
+
+    assert_eq!(status_dry, status_real);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// dry-run — migrate
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn migrate_dry_run_no_write() {
+    let repo = TestRepo::new();
+    repo.write("src/CODEOWNERS", "/src/** @team-a\n*.rs @team-b\n");
+
+    let status = corgi_core::migrate(repo.path(), true).unwrap();
+
+    assert_eq!(status, 1);
+    let content = repo.read("src/CODEOWNERS");
+    assert!(
+        !content.contains("Rule[auto-assign]"),
+        "migrate dry-run must not write"
+    );
+}
+
+#[test]
+fn migrate_dry_run_exit_code_matches_real_run() {
+    let repo_a = TestRepo::new();
+    repo_a.write("src/CODEOWNERS", "/src/** @team-a\n*.rs @team-b\n");
+
+    let status_dry = corgi_core::migrate(repo_a.path(), true).unwrap();
+
+    let repo_b = TestRepo::new();
+    repo_b.write("src/CODEOWNERS", "/src/** @team-a\n*.rs @team-b\n");
+
+    let status_real = corgi_core::migrate(repo_b.path(), false).unwrap();
+
+    assert_eq!(status_dry, status_real);
 }

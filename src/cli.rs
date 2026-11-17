@@ -14,9 +14,21 @@ pub struct Cli {
 #[derive(Clone, Copy, Debug, Subcommand)]
 pub enum Command {
     /// Reconcile package CODEOWNERS manifests with the repository state.
-    Sync,
+    Sync {
+        /// Perform a dry run without writing any files.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Rebuild the generated aggregate section in .github/CODEOWNERS.
-    Aggregate,
+    Aggregate {
+        /// Perform a dry run without writing any files.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Migrate conventional CODEOWNERS manifests into exhaustive CORGI manifests.
-    Migrate,
+    Migrate {
+        /// Perform a dry run without writing any files.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }

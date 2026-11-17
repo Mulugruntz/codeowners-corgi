@@ -52,6 +52,8 @@ corgi aggregate
 corgi migrate
 ```
 
+Each command accepts `--dry-run` to preview what would change without writing any files. The exit code still reflects the expected outcome (0 = no changes, 1 = changes would be made, 2 = fatal error).
+
 ## Model
 
 - Every directory containing a `CODEOWNERS` file is a package root.

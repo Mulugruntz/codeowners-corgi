@@ -18,6 +18,7 @@ pub const GENERATED_END: &str = "# END CORGI GENERATED";
 pub struct RepoContext {
     root: Utf8PathBuf,
     _git: Repository,
+    dry_run: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -35,7 +36,7 @@ pub struct GithubSections {
 }
 
 impl RepoContext {
-    pub fn discover(start: &Path) -> Result<Self> {
+    pub fn discover(start: &Path, dry_run: bool) -> Result<Self> {
         let git = Repository::discover(start)?;
         let Some(workdir) = git.workdir() else {
             return Err(CorgiError::Message(
@@ -43,7 +44,16 @@ impl RepoContext {
             ));
         };
         let root = utf8_path(workdir)?;
-        Ok(Self { root, _git: git })
+        Ok(Self {
+            root,
+            _git: git,
+            dry_run,
+        })
+    }
+
+    /// Return `true` when writes are suppressed (dry-run mode).
+    pub fn dry_run(&self) -> bool {
+        self.dry_run
     }
 
     pub fn root(&self) -> &Utf8Path {
@@ -119,6 +129,9 @@ impl RepoContext {
         let existing = fs::read_to_string(&path).ok();
         if existing.as_deref() == Some(content) {
             return Ok(false);
+        }
+        if self.dry_run {
+            return Ok(true);
         }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
