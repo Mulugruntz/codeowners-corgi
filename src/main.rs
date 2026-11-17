@@ -20,8 +20,8 @@ fn run(command: Command) -> corgi_core::Result<i32> {
     let current_dir = std::env::current_dir()?;
 
     match command {
-        Command::Sync => corgi_core::sync(&current_dir),
-        Command::Aggregate => corgi_core::aggregate(&current_dir),
-        Command::Migrate => corgi_core::migrate(&current_dir),
+        Command::Sync { dry_run } => corgi_core::sync(&current_dir, dry_run),
+        Command::Aggregate { dry_run } => corgi_core::aggregate(&current_dir, dry_run),
+        Command::Migrate { dry_run } => corgi_core::migrate(&current_dir, dry_run),
     }
 }
