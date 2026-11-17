@@ -21,7 +21,9 @@ fn run(command: Command) -> corgi_core::Result<i32> {
 
     match command {
         Command::Sync { dry_run } => corgi_core::sync(&current_dir, dry_run),
-        Command::Aggregate { dry_run } => corgi_core::aggregate(&current_dir, dry_run),
+        Command::Aggregate { dry_run, output } => {
+            corgi_core::aggregate(&current_dir, dry_run, output.as_deref())
+        }
         Command::Migrate { dry_run } => corgi_core::migrate(&current_dir, dry_run),
     }
 }

@@ -15,6 +15,28 @@ pub const GITHUB_CODEOWNERS: &str = ".github/CODEOWNERS";
 pub const GENERATED_BEGIN: &str = "# BEGIN CORGI GENERATED";
 pub const GENERATED_END: &str = "# END CORGI GENERATED";
 
+/// Detected hosting platform, used to choose the default aggregate output path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    /// GitHub — `.github/CODEOWNERS`
+    GitHub,
+    /// GitLab — `.gitlab/CODEOWNERS`
+    GitLab,
+    /// Bitbucket — `.bitbucket/CODEOWNERS`
+    Bitbucket,
+}
+
+impl Platform {
+    /// Return the default CODEOWNERS file path for this platform.
+    pub fn default_codeowners_path(&self) -> &'static str {
+        match self {
+            Platform::GitHub => GITHUB_CODEOWNERS,
+            Platform::GitLab => ".gitlab/CODEOWNERS",
+            Platform::Bitbucket => ".bitbucket/CODEOWNERS",
+        }
+    }
+}
+
 pub struct RepoContext {
     root: Utf8PathBuf,
     _git: Repository,
@@ -25,7 +47,12 @@ pub struct RepoContext {
 pub struct PackageInfo {
     pub root: Utf8PathBuf,
     pub manifest_path: Utf8PathBuf,
-    pub is_github: bool,
+    /// The hosting platform of this package's CODEOWNERS file.
+    ///
+    /// `.github/CODEOWNERS` is [`Platform::GitHub`]; other platform-specific
+    /// paths (`.gitlab/CODEOWNERS`, `.bitbucket/CODEOWNERS`) are marked so
+    /// `aggregate` can skip them as source manifests.
+    pub platform: Platform,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +83,35 @@ impl RepoContext {
         self.dry_run
     }
 
+    /// Detect the hosting platform by inspecting git remote URLs.
+    ///
+    /// Iterates all configured remotes and checks their URLs against known
+    /// platform patterns. Returns the first matching platform; if no match is
+    /// found, falls back to [`Platform::GitHub`].
+    ///
+    /// Works in both local and CI environments since remotes are configured
+    /// the same way in both.
+    pub fn detect_platform(&self) -> Platform {
+        let Some(remote_names) = self._git.remotes().ok() else {
+            return Platform::GitHub;
+        };
+
+        for name_result in remote_names.iter() {
+            let Some(name) = name_result.ok().flatten() else {
+                continue;
+            };
+            if let Ok(remote) = self._git.find_remote(name)
+                && let Ok(url) = remote.url()
+                && let Some(detected) = detect_platform_from_url(url)
+            {
+                return detected;
+            }
+        }
+
+        // Fallback to GitHub when no platform signal is found.
+        Platform::GitHub
+    }
+
     pub fn root(&self) -> &Utf8Path {
         &self.root
     }
@@ -71,7 +127,7 @@ impl RepoContext {
                 }
                 packages.push(PackageInfo {
                     manifest_path: file,
-                    is_github: root.as_str() == ".github",
+                    platform: platform_from_root(root.as_str()),
                     root,
                 });
             }
@@ -83,7 +139,7 @@ impl RepoContext {
         // `.github/` and let the root package own the rest.
         if !has_root_package {
             for package in packages.iter_mut() {
-                if package.is_github {
+                if package.platform == Platform::GitHub {
                     package.root = Utf8PathBuf::new();
                 }
             }
@@ -261,8 +317,64 @@ fn split_github_sections(text: &str) -> Result<GithubSections> {
     }
 }
 
+/// Detect the hosting platform from a git remote URL string.
+///
+/// Supports common URL formats:
+/// - HTTPS: `https://github.com/owner/repo.git`
+/// - SSH: `git@github.com:owner/repo.git`
+/// - GitLab subdomains: `gitlab.example.com`, `gitlab.com`
+/// - Bitbucket: `bitbucket.org`, `bitbucket.com`
+fn detect_platform_from_url(url: &str) -> Option<Platform> {
+    let lower = url.to_ascii_lowercase();
+
+    // SSH URLs: git@github.com:owner/repo.git
+    if lower.starts_with("git@github.com:") || lower.starts_with("git@github.com/") {
+        return Some(Platform::GitHub);
+    }
+
+    // HTTPS URLs
+    if lower.starts_with("https://github.com/") {
+        return Some(Platform::GitHub);
+    }
+
+    // GitLab: gitlab.com or gitlab.* subdomains (e.g., gitlab.example.com)
+    // SSH: git@gitlab.example.com:owner/repo.git
+    // SSH: git@gitlab.com:owner/repo.git
+    if lower.starts_with("git@gitlab") {
+        return Some(Platform::GitLab);
+    }
+    if lower.starts_with("https://gitlab") {
+        return Some(Platform::GitLab);
+    }
+
+    // Bitbucket: bitbucket.org, bitbucket.com
+    if lower.starts_with("git@bitbucket") {
+        return Some(Platform::Bitbucket);
+    }
+    if lower.starts_with("https://bitbucket") {
+        return Some(Platform::Bitbucket);
+    }
+
+    // Also check domain-based patterns in any part of the URL
+    // (handles URLs with port numbers, paths, or query strings)
+    if lower.contains(".github.com") || lower.contains("github.com") {
+        return Some(Platform::GitHub);
+    }
+    if lower.contains(".gitlab.") || lower.contains("gitlab.com") {
+        return Some(Platform::GitLab);
+    }
+    if lower.contains(".bitbucket.")
+        || lower.contains("bitbucket.org")
+        || lower.contains("bitbucket.com")
+    {
+        return Some(Platform::Bitbucket);
+    }
+
+    None
+}
+
 pub fn manifest_display_path(package: &PackageInfo, repo_relative: &Utf8Path) -> String {
-    if package.is_github {
+    if package.uses_generated_sections() {
         return repo_relative_string(repo_relative);
     }
 
@@ -285,7 +397,7 @@ pub fn repo_relative_from_manifest_path(
         return Err(CorgiError::Parse("empty CODEOWNERS path".into()));
     }
 
-    if package.is_github || package.root.as_str().is_empty() {
+    if package.uses_generated_sections() || package.root.as_str().is_empty() {
         return Ok(Utf8PathBuf::from(trimmed));
     }
 
@@ -308,12 +420,169 @@ impl PackageInfo {
             self.manifest_path.as_str().to_string()
         }
     }
+
+    /// Returns `true` when this manifest lives in `.github/` and uses GENERATED
+    /// section markers (`# BEGIN CORGI GENERATED` / `# END CORGI GENERATED`).
+    ///
+    /// Only the repository-wide `.github/CODEOWNERS` uses these markers.
+    /// Subdirectory manifests (e.g. `src/CODEOWNERS`) and non-GitHub platform
+    /// manifests are plain CODEOWNERS files.
+    pub fn uses_generated_sections(&self) -> bool {
+        self.root.as_str() == ".github"
+    }
+}
+
+/// Map a CODEOWNERS directory to its hosting platform.
+///
+/// `.github` → `GitHub`, `.gitlab` → `GitLab`, `.bitbucket` → `Bitbucket`,
+/// anything else → `GitHub` (default).
+fn platform_from_root(root: &str) -> Platform {
+    match root {
+        ".github" => Platform::GitHub,
+        ".gitlab" => Platform::GitLab,
+        ".bitbucket" => Platform::Bitbucket,
+        _ => Platform::GitHub,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::git::repo_relative_string;
+
+    // ── platform_from_root ────────────────────────────────────────
+
+    #[test]
+    fn platform_from_root_github() {
+        assert_eq!(platform_from_root(".github"), Platform::GitHub);
+    }
+
+    #[test]
+    fn platform_from_root_gitlab() {
+        assert_eq!(platform_from_root(".gitlab"), Platform::GitLab);
+    }
+
+    #[test]
+    fn platform_from_root_bitbucket() {
+        assert_eq!(platform_from_root(".bitbucket"), Platform::Bitbucket);
+    }
+
+    #[test]
+    fn platform_from_root_root_defaults_to_github() {
+        assert_eq!(platform_from_root(""), Platform::GitHub);
+    }
+
+    #[test]
+    fn platform_from_root_subdir_defaults_to_github() {
+        assert_eq!(platform_from_root("src"), Platform::GitHub);
+    }
+
+    // ── detect_platform_from_url ──────────────────────────────────
+
+    #[test]
+    fn detect_platform_github_https() {
+        assert_eq!(
+            detect_platform_from_url("https://github.com/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_github_ssh() {
+        assert_eq!(
+            detect_platform_from_url("git@github.com:owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_github_no_trailing_slash() {
+        assert_eq!(
+            detect_platform_from_url("https://github.com/owner/repo"),
+            Some(Platform::GitHub)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_com() {
+        assert_eq!(
+            detect_platform_from_url("https://gitlab.com/owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_subdomain() {
+        assert_eq!(
+            detect_platform_from_url("https://gitlab.example.com/owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_ssh() {
+        assert_eq!(
+            detect_platform_from_url("git@gitlab.com:owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_gitlab_subdomain_ssh() {
+        assert_eq!(
+            detect_platform_from_url("git@gitlab.example.com:owner/repo.git"),
+            Some(Platform::GitLab)
+        );
+    }
+
+    #[test]
+    fn detect_platform_bitbucket_org() {
+        assert_eq!(
+            detect_platform_from_url("https://bitbucket.org/owner/repo.git"),
+            Some(Platform::Bitbucket)
+        );
+    }
+
+    #[test]
+    fn detect_platform_bitbucket_com() {
+        assert_eq!(
+            detect_platform_from_url("https://bitbucket.com/owner/repo.git"),
+            Some(Platform::Bitbucket)
+        );
+    }
+
+    #[test]
+    fn detect_platform_bitbucket_ssh() {
+        assert_eq!(
+            detect_platform_from_url("git@bitbucket.org:owner/repo.git"),
+            Some(Platform::Bitbucket)
+        );
+    }
+
+    #[test]
+    fn detect_platform_unknown_returns_none() {
+        assert_eq!(
+            detect_platform_from_url("https://self-hosted.example.com/owner/repo.git"),
+            None
+        );
+    }
+
+    #[test]
+    fn detect_platform_empty_url_returns_none() {
+        assert_eq!(detect_platform_from_url(""), None);
+    }
+
+    #[test]
+    fn detect_platform_case_insensitive() {
+        assert_eq!(
+            detect_platform_from_url("HTTPS://GitHub.COM/owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+        assert_eq!(
+            detect_platform_from_url("GIT@GITHUB.COM:owner/repo.git"),
+            Some(Platform::GitHub)
+        );
+    }
 
     // ── split_github_sections ─────────────────────────────────────
 
@@ -473,7 +742,7 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::new(),
             manifest_path: Utf8PathBuf::from("CODEOWNERS"),
-            is_github: false,
+            platform: Platform::GitHub,
         };
         let result = manifest_display_path(&package, Utf8Path::new("src/lib.rs"));
         assert_eq!(result, "/src/lib.rs");
@@ -484,7 +753,8 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::from("packages/api"),
             manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
-            is_github: false,
+
+            platform: Platform::GitHub,
         };
         let result = manifest_display_path(&package, Utf8Path::new("packages/api/src/lib.rs"));
         assert_eq!(result, "/src/lib.rs");
@@ -495,7 +765,7 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::from(".github"),
             manifest_path: Utf8PathBuf::from(".github/CODEOWNERS"),
-            is_github: true,
+            platform: Platform::GitHub,
         };
         let result = manifest_display_path(&package, Utf8Path::new(".github/workflows/ci.yml"));
         assert_eq!(result, "/.github/workflows/ci.yml");
@@ -508,7 +778,7 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::new(),
             manifest_path: Utf8PathBuf::from("CODEOWNERS"),
-            is_github: false,
+            platform: Platform::GitHub,
         };
         let result = repo_relative_from_manifest_path(&package, "/src/lib.rs").unwrap();
         assert_eq!(result, Utf8PathBuf::from("src/lib.rs"));
@@ -519,7 +789,8 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::from("packages/api"),
             manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
-            is_github: false,
+
+            platform: Platform::GitHub,
         };
         let result = repo_relative_from_manifest_path(&package, "/src/lib.rs").unwrap();
         assert_eq!(result, Utf8PathBuf::from("packages/api/src/lib.rs"));
@@ -530,7 +801,7 @@ mod tests {
         let package = PackageInfo {
             root: Utf8PathBuf::new(),
             manifest_path: Utf8PathBuf::from("CODEOWNERS"),
-            is_github: false,
+            platform: Platform::GitHub,
         };
         assert!(repo_relative_from_manifest_path(&package, "/").is_err());
     }
@@ -560,7 +831,7 @@ mod tests {
         let p = PackageInfo {
             root: Utf8PathBuf::new(),
             manifest_path: Utf8PathBuf::from("CODEOWNERS"),
-            is_github: false,
+            platform: Platform::GitHub,
         };
         assert_eq!(p.display_name(), "CODEOWNERS");
     }
@@ -570,7 +841,8 @@ mod tests {
         let p = PackageInfo {
             root: Utf8PathBuf::from("packages/api"),
             manifest_path: Utf8PathBuf::from("packages/api/CODEOWNERS"),
-            is_github: false,
+
+            platform: Platform::GitHub,
         };
         assert_eq!(p.display_name(), "packages/api/CODEOWNERS");
     }

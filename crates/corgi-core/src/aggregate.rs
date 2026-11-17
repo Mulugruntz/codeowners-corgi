@@ -1,3 +1,5 @@
+use camino::Utf8Path;
+
 use crate::{
     codeowners::{EntryKind, Item, Manifest},
     error::{CorgiError, Result},
@@ -8,13 +10,16 @@ use crate::{
     },
 };
 
-pub fn run(repo: &RepoContext) -> Result<i32> {
+pub fn run(repo: &RepoContext, output_path: Option<&str>) -> Result<i32> {
     let packages = repo.package_roots()?;
     let mut generated_entries = Vec::new();
-    let github_path = camino::Utf8Path::new(GITHUB_CODEOWNERS);
 
     for package in &packages {
-        if package.is_github {
+        // Skip platform-specific aggregate output directories. `.github/CODEOWNERS`
+        // is the aggregate output for GitHub, `.gitlab/CODEOWNERS` for GitLab,
+        // `.bitbucket/CODEOWNERS` for Bitbucket. Only root and subdirectory
+        // manifests are processed as source inputs.
+        if matches!(package.root.as_str(), ".github" | ".gitlab" | ".bitbucket") {
             continue;
         }
         let manifest = Manifest::parse(&repo.read_text(&package.manifest_path)?)?;
@@ -45,18 +50,27 @@ pub fn run(repo: &RepoContext) -> Result<i32> {
         )
     });
 
-    let existing = match repo.read_text(github_path) {
-        Ok(text) => text,
-        Err(CorgiError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error),
+    let output_path =
+        output_path.unwrap_or_else(|| repo.detect_platform().default_codeowners_path());
+    let output = Utf8Path::new(output_path);
+    let content = if output.as_str() == GITHUB_CODEOWNERS {
+        let existing = match repo.read_text(output) {
+            Ok(text) => text,
+            Err(CorgiError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                String::new()
+            }
+            Err(error) => return Err(error),
+        };
+        let sections = repo.split_github_sections(&existing)?;
+        crate::sync::combine_github_sections(
+            &sections.prefix,
+            generated_body.as_deref(),
+            &sections.suffix,
+        )
+    } else {
+        generated_body.unwrap_or_else(String::new)
     };
-    let sections = repo.split_github_sections(&existing)?;
-    let content = crate::sync::combine_github_sections(
-        &sections.prefix,
-        generated_body.as_deref(),
-        &sections.suffix,
-    );
 
-    let changed = repo.write_if_changed(github_path, &content)?;
+    let changed = repo.write_if_changed(output, &content)?;
     Ok(if changed { 1 } else { 0 })
 }
