@@ -18,19 +18,28 @@ use std::path::Path;
 pub use error::{CorgiError, Result};
 
 /// Reconcile package CODEOWNERS manifests with the repository state.
-pub fn sync(start: &Path) -> Result<i32> {
-    let repo = repo::RepoContext::discover(start)?;
+///
+/// When `dry_run` is `true`, no files are written. The returned status code
+/// matches the code that would be returned by an actual run.
+pub fn sync(start: &Path, dry_run: bool) -> Result<i32> {
+    let repo = repo::RepoContext::discover(start, dry_run)?;
     sync::run(&repo)
 }
 
 /// Rebuild the generated aggregate section in `.github/CODEOWNERS`.
-pub fn aggregate(start: &Path) -> Result<i32> {
-    let repo = repo::RepoContext::discover(start)?;
+///
+/// When `dry_run` is `true`, no files are written. The returned status code
+/// matches the code that would be returned by an actual run.
+pub fn aggregate(start: &Path, dry_run: bool) -> Result<i32> {
+    let repo = repo::RepoContext::discover(start, dry_run)?;
     aggregate::run(&repo)
 }
 
 /// Migrate conventional CODEOWNERS patterns into exhaustive CORGI manifests.
-pub fn migrate(start: &Path) -> Result<i32> {
-    let repo = repo::RepoContext::discover(start)?;
+///
+/// When `dry_run` is `true`, no files are written. The returned status code
+/// matches the code that would be returned by an actual run.
+pub fn migrate(start: &Path, dry_run: bool) -> Result<i32> {
+    let repo = repo::RepoContext::discover(start, dry_run)?;
     migrate::run(&repo)
 }
